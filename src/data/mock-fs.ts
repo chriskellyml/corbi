@@ -6,11 +6,32 @@ export interface FileEntry {
   content: string;
 }
 
+export interface RunFile {
+  name: string;
+  content: string;
+}
+
+export interface RunEnvironment {
+  name: string;
+  options: string; // content of job.options
+  export: string;  // content of export.csv
+  logs: RunFile[];
+  scripts: RunFile[];
+}
+
+export interface ProjectRun {
+  id: string; // timestamp
+  timestamp: string;
+  isDryRun: boolean;
+  environments: RunEnvironment[];
+}
+
 export interface Project {
   id: string;
   name: string;
   jobs: FileEntry[];
   scripts: FileEntry[];
+  runs: ProjectRun[];
 }
 
 export const ENVIRONMENTS = ['LOC', 'DEV', 'TEST', 'ACC', 'PROD'] as const;
@@ -51,6 +72,28 @@ declare variable $URI as xs:string external;
 
 xdmp:document-delete($URI)` 
       }
+    ],
+    runs: [
+      {
+        id: '20240320100000',
+        timestamp: '20240320100000',
+        isDryRun: true,
+        environments: [
+          {
+            name: 'DEV',
+            options: `URIS_MODULE=scripts/collect.xqy\nPROCESS_MODULE=scripts/process.xqy\nTHREAD_COUNT=4\nBATCH_SIZE=100\nMODULES_DATABASE=Modules\nHOST=dev-server\nPORT=8010\nUSER=admin`,
+            export: `uri,status\n/doc/1.xml,deleted\n/doc/2.xml,deleted`,
+            logs: [
+              { name: 'corb.log', content: `INFO: Starting CORB run\nINFO: Found 2 URIs\nINFO: Completed` },
+              { name: 'marklogic.log', content: `2024-03-20 10:00:01 Info: Request handling...` }
+            ],
+            scripts: [
+              { name: 'collect.xqy', content: `(: Snapshot of collect.xqy at runtime :)` },
+              { name: 'process.xqy', content: `(: Snapshot of process.xqy at runtime :)` }
+            ]
+          }
+        ]
+      }
     ]
   },
   {
@@ -77,7 +120,8 @@ THREAD_COUNT=8`
       { name: 'pre-process.xqy', type: 'script', content: 'xquery version "1.0-ml";\n\n(: Pre-processing logic :)' },
       { name: 'process.xqy', type: 'script', content: 'xquery version "1.0-ml";\n\n(: Main processing logic :)' },
       { name: 'collect-final.xqy', type: 'script', content: 'xquery version "1.0-ml";\n\n(: Final collection :)' }
-    ]
+    ],
+    runs: []
   }
 ];
 
