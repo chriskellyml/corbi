@@ -4,14 +4,13 @@ import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Label } from "../../components/ui/label";
 import { Input } from "../../components/ui/input";
-import { Environment } from "../../data/mock-fs";
 
 interface RunDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   jobName: string;
   projectName: string;
-  environment: Environment;
+  environment: string;
   onRun: (options: RunOptions) => void;
 }
 

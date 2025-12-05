@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { TopBar } from "../components/corb/TopBar";
 import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar";
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { RunDialog, RunOptions } from "../components/corb/RunDialog";
-import { Environment, MOCK_PROJECTS, MOCK_ENV_FILES, ProjectRun } from "../data/mock-fs";
+import { Project, ProjectRun } from "../types";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun } from "../lib/api";
 import { Play } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -12,17 +13,41 @@ import { MadeWithDyad } from "../components/made-with-dyad";
 import { Textarea } from "../components/ui/textarea";
 
 export default function Index() {
-  const [environment, setEnvironment] = useState<Environment>('LOC');
+  const [environment, setEnvironment] = useState<string>('LOC');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   
   // New unified selection state
   const [selection, setSelection] = useState<SelectionType | null>(null);
 
   // Data state
-  const [projects, setProjects] = useState(MOCK_PROJECTS);
-  const [envFiles, setEnvFiles] = useState(MOCK_ENV_FILES);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
 
   const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
+
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+        try {
+            const [p, e] = await Promise.all([fetchProjects(), fetchEnvFiles()]);
+            setProjects(p);
+            setEnvFiles(e);
+            
+            // Set default environment if LOC not present
+            if (!e['LOC'] && Object.keys(e).length > 0) {
+                setEnvironment(Object.keys(e)[0]);
+            }
+        } catch (err) {
+            toast.error("Failed to load data. Is the server running?");
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
+    loadData();
+  }, []);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
@@ -31,23 +56,29 @@ export default function Index() {
     setSelection(null);
   };
 
-  const handleDeleteRun = (projectId: string, runId: string) => {
-    setProjects(prev => prev.map(p => {
-      if (p.id !== projectId) return p;
-      return {
-        ...p,
-        runs: p.runs.filter(r => r.id !== runId)
-      };
-    }));
-    toast.success("Run deleted successfully");
-    if (selection?.kind === 'run' && selection.runId === runId) {
-      setSelection(null);
+  const handleDeleteRun = async (projectId: string, runId: string) => {
+    try {
+        await deleteRun(projectId, runId);
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            runs: p.runs.filter(r => r.id !== runId)
+          };
+        }));
+        toast.success("Run deleted successfully");
+        if (selection?.kind === 'run' && selection.runId === runId) {
+          setSelection(null);
+        }
+    } catch (err) {
+        toast.error("Failed to delete run");
     }
   };
 
   const handleContentChange = (newContent: string) => {
     if (!selectedProject || !selection || selection.kind === 'run') return; // Cannot edit run files
 
+    // Update local state immediately for UI responsiveness
     const newProjects = projects.map(p => {
       if (p.id !== selectedProjectId) return p;
       
@@ -63,12 +94,28 @@ export default function Index() {
         };
       }
     });
-
     setProjects(newProjects);
+
+    // Debounce Save to API
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+        saveFile(selectedProjectId, selection.name, newContent, selection.type)
+            .then(() => {
+                // Optional: show small saved indicator
+            })
+            .catch(() => toast.error("Failed to save changes"));
+    }, 1000);
   };
 
   const handleEnvFileChange = (newContent: string) => {
     setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
+    
+    // Debounce Save
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+        saveFile(null, `${environment}.props`, newContent, 'env')
+            .catch(() => toast.error("Failed to save env file"));
+    }, 1000);
   };
 
   const getCurrentFileContent = () => {
@@ -99,35 +146,33 @@ export default function Index() {
     return "";
   };
 
-  const handleRunExecution = (options: RunOptions) => {
-    const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+  const handleRunExecution = async (options: RunOptions) => {
+    if (!selectedProjectId) return;
     
-    // In a real app we'd construct the actual run artifacts here.
-    // For now, we mock a new run entry.
-    const newRun: ProjectRun = {
-      id: timestamp,
-      timestamp,
-      isDryRun: options.dryRun,
-      environments: [
-        {
-          name: environment,
-          options: `# Generated Options\nLIMIT=${options.limit || 'NONE'}\nTHREADS=${options.threadCount}`,
-          export: 'id,status\n1,processed',
-          logs: [{ name: 'corb.log', content: 'Run started...' }],
-          scripts: selectedProject?.scripts.map(s => ({ name: s.name, content: s.content })) || []
-        }
-      ]
-    };
+    // Check if we have a selected job
+    let jobName = '';
+    if (selection?.kind === 'source' && selection.type === 'job') {
+        jobName = selection.name;
+    } else {
+        // Fallback or error? Assuming user must be on a job screen or we pick default?
+        // The dialog only opens if we are on a job screen (see render below).
+        jobName = (selection as any).name; 
+    }
 
-    setProjects(prev => prev.map(p => {
-      if (p.id !== selectedProjectId) return p;
-      return { ...p, runs: [newRun, ...p.runs] };
-    }));
+    try {
+        const runId = await createRun(selectedProjectId, jobName, environment, options);
+        
+        // Optimistically add run or fetch? Fetching is safer to get full structure.
+        const updatedProjects = await fetchProjects();
+        setProjects(updatedProjects);
 
-    toast.success("Job Started", {
-      description: `New run created: ${timestamp}`,
-      duration: 3000,
-    });
+        toast.success("Job Started", {
+          description: `Run created: ${runId}`,
+          duration: 3000,
+        });
+    } catch (e) {
+        toast.error("Failed to start run");
+    }
   };
 
   // Determine what type of editor/viewer to show
@@ -137,9 +182,17 @@ export default function Index() {
   const isReadOnly = selection?.kind === 'run';
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
 
+  if (loading) {
+      return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
+  }
+
   return (
     <div className="h-screen w-full flex flex-col bg-background overflow-hidden">
-      <TopBar currentEnv={environment} onEnvChange={setEnvironment} />
+      <TopBar 
+        currentEnv={environment} 
+        environments={Object.keys(envFiles)}
+        onEnvChange={setEnvironment} 
+      />
       
       <div className="flex-1 flex overflow-hidden">
         {/* Unified Sidebar */}
@@ -182,7 +235,7 @@ export default function Index() {
                        <div className="w-1/3 border rounded-lg overflow-hidden shadow-sm bg-background">
                          <PropertiesEditor 
                            title={`Environment: ${environment}.props`}
-                           content={envFiles[environment]}
+                           content={envFiles[environment] || ""}
                            onChange={handleEnvFileChange}
                          />
                        </div>
@@ -237,7 +290,7 @@ export default function Index() {
             )}
           </div>
         ) : (
-          // No Project Selected State (Handled by Sidebar covering full width in principle, but here as placeholder if needed)
+          // No Project Selected State
           <div className="flex-1 flex items-center justify-center text-muted-foreground bg-muted/5">
              <div className="text-center max-w-lg">
                 <MadeWithDyad />

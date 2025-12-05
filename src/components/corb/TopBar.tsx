@@ -1,12 +1,12 @@
-import { Environment, ENVIRONMENTS } from "../../data/mock-fs";
 import { cn } from "../../lib/utils";
 
 interface TopBarProps {
-  currentEnv: Environment;
-  onEnvChange: (env: Environment) => void;
+  currentEnv: string;
+  environments: string[];
+  onEnvChange: (env: string) => void;
 }
 
-const ENV_COLORS: Record<Environment, string> = {
+const ENV_COLORS: Record<string, string> = {
   LOC: "bg-slate-700 border-slate-600",
   DEV: "bg-emerald-700 border-emerald-600",
   TEST: "bg-amber-600 border-amber-500",
@@ -14,11 +14,13 @@ const ENV_COLORS: Record<Environment, string> = {
   PROD: "bg-red-700 border-red-600",
 };
 
-export function TopBar({ currentEnv, onEnvChange }: TopBarProps) {
+const DEFAULT_COLOR = "bg-slate-700 border-slate-600";
+
+export function TopBar({ currentEnv, environments, onEnvChange }: TopBarProps) {
   return (
     <div className={cn(
       "w-full h-16 flex items-center justify-between px-6 text-white transition-colors duration-300 shadow-md",
-      ENV_COLORS[currentEnv]
+      ENV_COLORS[currentEnv] || DEFAULT_COLOR
     )}>
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-bold tracking-tight">CORB Runner</h1>
@@ -28,7 +30,7 @@ export function TopBar({ currentEnv, onEnvChange }: TopBarProps) {
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium opacity-90">Environment:</span>
         <div className="flex bg-black/20 p-1 rounded-lg">
-          {ENVIRONMENTS.map((env) => (
+          {environments.map((env) => (
             <button
               key={env}
               onClick={() => onEnvChange(env)}

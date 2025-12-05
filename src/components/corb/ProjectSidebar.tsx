@@ -1,4 +1,4 @@
-import { Project, ProjectRun } from "../../data/mock-fs";
+import { Project, ProjectRun } from "../../types";
 import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
