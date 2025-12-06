@@ -29,7 +29,7 @@ export async function saveFile(
 }
 
 export interface RunOptions {
-  limit: boolean;
+  limit: number | null;
   dryRun: boolean;
   threadCount: number;
 }

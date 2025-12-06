@@ -1,4 +1,4 @@
-import { Project, ProjectRun } from "../../types";
+import { Project, ProjectRun } from "../../data/mock-fs";
 import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
@@ -82,40 +82,13 @@ export function ProjectSidebar({
       </div>
 
       <ScrollArea className="flex-1">
-        <Accordion type="multiple" defaultValue={["runs", "source"]} className="w-full">
+        <Accordion type="multiple" defaultValue={["definition", "runs"]} className="w-full">
           
-          {/* RUNS SECTION */}
-          <AccordionItem value="runs" className="border-b-0">
+          {/* DEFINITION SECTION (formerly SOURCE) */}
+          <AccordionItem value="definition" className="border-b border-border">
             <AccordionTrigger className="px-4 py-2 hover:no-underline hover:bg-muted/50 text-sm font-semibold uppercase text-muted-foreground">
               <span className="flex items-center gap-2">
-                <History className="h-4 w-4" /> Runs
-              </span>
-            </AccordionTrigger>
-            <AccordionContent className="pt-1 pb-4">
-              {selectedProject.runs.length === 0 ? (
-                <div className="px-8 py-2 text-xs text-muted-foreground italic">No runs recorded.</div>
-              ) : (
-                <div className="space-y-1">
-                  {selectedProject.runs.map((run) => (
-                    <RunItem 
-                      key={run.id} 
-                      run={run} 
-                      projectId={selectedProject.id}
-                      selection={selection}
-                      onSelectFile={onSelectFile}
-                      onDeleteRun={onDeleteRun}
-                    />
-                  ))}
-                </div>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-
-          {/* SOURCE SECTION */}
-          <AccordionItem value="source" className="border-b-0">
-            <AccordionTrigger className="px-4 py-2 hover:no-underline hover:bg-muted/50 text-sm font-semibold uppercase text-muted-foreground">
-              <span className="flex items-center gap-2">
-                <Folder className="h-4 w-4" /> Source Code
+                <Folder className="h-4 w-4" /> Definition
               </span>
             </AccordionTrigger>
             <AccordionContent className="pt-1 pb-4">
@@ -146,6 +119,34 @@ export function ProjectSidebar({
                ))}
             </AccordionContent>
           </AccordionItem>
+
+          {/* RUNS SECTION */}
+          <AccordionItem value="runs" className="border-b-0">
+            <AccordionTrigger className="px-4 py-2 hover:no-underline hover:bg-muted/50 text-sm font-semibold uppercase text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <History className="h-4 w-4" /> Runs
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="pt-1 pb-4">
+              {selectedProject.runs.length === 0 ? (
+                <div className="px-8 py-2 text-xs text-muted-foreground italic">No runs recorded.</div>
+              ) : (
+                <div className="space-y-1">
+                  {selectedProject.runs.map((run) => (
+                    <RunItem 
+                      key={run.id} 
+                      run={run} 
+                      projectId={selectedProject.id}
+                      selection={selection}
+                      onSelectFile={onSelectFile}
+                      onDeleteRun={onDeleteRun}
+                    />
+                  ))}
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+          
         </Accordion>
       </ScrollArea>
     </div>
