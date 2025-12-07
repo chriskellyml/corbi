@@ -1,10 +1,9 @@
-import { Environment } from "../../data/mock-fs";
 import { cn } from "../../lib/utils";
 
 interface TopBarProps {
-  currentEnv: Environment;
-  environments: ReadonlyArray<string>;
-  onEnvChange: (env: Environment) => void;
+  currentEnv: string;
+  environments: string[];
+  onEnvChange: (env: string) => void;
 }
 
 const ENV_COLORS: Record<string, string> = {
@@ -15,11 +14,13 @@ const ENV_COLORS: Record<string, string> = {
   PROD: "bg-red-700 border-red-600",
 };
 
+const DEFAULT_COLOR = "bg-slate-700 border-slate-600";
+
 export function TopBar({ currentEnv, environments, onEnvChange }: TopBarProps) {
   return (
     <div className={cn(
       "w-full h-16 flex items-center justify-between px-6 text-white transition-colors duration-300 shadow-md",
-      ENV_COLORS[currentEnv] || "bg-slate-700 border-slate-600"
+      ENV_COLORS[currentEnv] || DEFAULT_COLOR
     )}>
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-bold tracking-tight">CORB Runner</h1>
@@ -32,7 +33,7 @@ export function TopBar({ currentEnv, environments, onEnvChange }: TopBarProps) {
           {environments.map((env) => (
             <button
               key={env}
-              onClick={() => onEnvChange(env as Environment)}
+              onClick={() => onEnvChange(env)}
               className={cn(
                 "px-3 py-1 text-xs font-bold rounded-md transition-all",
                 currentEnv === env 
