@@ -1,4 +1,4 @@
-import { Project, Environment } from "../types";
+import { Project } from "../types";
 
 const API_BASE = "http://localhost:3001/api";
 
@@ -12,6 +12,25 @@ export async function fetchEnvFiles(): Promise<Record<string, string>> {
   const res = await fetch(`${API_BASE}/envs`);
   if (!res.ok) throw new Error("Failed to fetch envs");
   return res.json();
+}
+
+export async function fetchSupportCollectors(): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/support/collectors`);
+    if (!res.ok) throw new Error("Failed to fetch support collectors");
+    return res.json();
+}
+
+export async function uploadFile(file: File): Promise<{ path: string, filename: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (!res.ok) throw new Error("Failed to upload file");
+    return res.json();
 }
 
 export async function saveFile(
@@ -32,6 +51,11 @@ export interface RunOptions {
   limit: number | null;
   dryRun: boolean;
   threadCount: number;
+  urisMode: 'default' | 'file' | 'custom';
+  urisFile?: string;
+  customUrisModule?: string;
+  processMode: 'default' | 'custom';
+  customProcessModule?: string;
 }
 
 export async function createRun(

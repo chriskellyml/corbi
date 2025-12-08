@@ -2,8 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import fs from 'fs/promises';
+import { existsSync, mkdirSync, createWriteStream } from 'fs';
 import path from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import multer from 'multer';
 
 const app = express();
 const PORT = 3001;
@@ -12,22 +13,41 @@ const WORKING_DIR = '/Users/chkelly/Workspace/projects/lvbb/kt/1-beheer-scripts/
 app.use(cors());
 app.use(bodyParser.json());
 
-// Ensure working directory exists (mock it if not, for safety/testing, but log warning)
+// Setup directories
+const PROJECTS_DIR = path.join(WORKING_DIR, 'projects');
+const ENV_DIR = path.join(WORKING_DIR, 'env');
+const RUNS_DIR = path.join(WORKING_DIR, 'runs');
+const SUPPORT_DIR = path.join(WORKING_DIR, 'support');
+const COLLECTORS_DIR = path.join(SUPPORT_DIR, 'collectors');
+const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
+
+// Ensure working directory exists
 if (!existsSync(WORKING_DIR)) {
   console.warn(`WARNING: Working directory ${WORKING_DIR} does not exist. Creating it for testing purposes.`);
   try {
       mkdirSync(WORKING_DIR, { recursive: true });
-      mkdirSync(path.join(WORKING_DIR, 'projects'));
-      mkdirSync(path.join(WORKING_DIR, 'env'));
-      mkdirSync(path.join(WORKING_DIR, 'runs'));
+      mkdirSync(PROJECTS_DIR);
+      mkdirSync(ENV_DIR);
+      mkdirSync(RUNS_DIR);
   } catch (e) {
       console.error("Failed to create working directory:", e);
   }
 }
 
-const PROJECTS_DIR = path.join(WORKING_DIR, 'projects');
-const ENV_DIR = path.join(WORKING_DIR, 'env');
-const RUNS_DIR = path.join(WORKING_DIR, 'runs');
+// Ensure support/collectors exists with a dummy file if needed
+if (!existsSync(COLLECTORS_DIR)) {
+    try {
+        mkdirSync(COLLECTORS_DIR, { recursive: true });
+        fs.writeFile(path.join(COLLECTORS_DIR, 'example-collector.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Collector :)\ncts:uris((),(),cts:and-query(()))');
+    } catch(e) { console.error("Failed to create collectors dir", e); }
+}
+
+// Ensure uploads dir
+if (!existsSync(UPLOADS_DIR)) {
+    try { mkdirSync(UPLOADS_DIR, { recursive: true }); } catch(e) {}
+}
+
+const upload = multer({ dest: UPLOADS_DIR });
 
 // Helper to safely resolve paths
 const safePath = (base: string, sub: string) => {
@@ -160,6 +180,23 @@ app.get('/api/envs', async (req, res) => {
     }
 });
 
+// GET /api/support/collectors
+app.get('/api/support/collectors', async (req, res) => {
+    try {
+        if (!existsSync(COLLECTORS_DIR)) return res.json([]);
+        const files = await fs.readdir(COLLECTORS_DIR);
+        res.json(files.filter(f => !f.startsWith('.')));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/upload
+app.post('/api/upload', upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    res.json({ path: req.file.path, filename: req.file.originalname });
+});
+
 // POST /api/save
 app.post('/api/save', async (req, res) => {
     const { projectId, fileName, content, type } = req.body;
@@ -195,7 +232,8 @@ app.post('/api/run', async (req, res) => {
         await fs.mkdir(runDir, { recursive: true });
 
         // 1. Read & Copy Job File
-        const jobContent = await fs.readFile(path.join(PROJECTS_DIR, projectId, jobName), 'utf-8');
+        const jobPath = path.join(PROJECTS_DIR, projectId, jobName);
+        let jobContent = await fs.readFile(jobPath, 'utf-8');
         await fs.writeFile(path.join(runDir, jobName), jobContent);
 
         // 2. Read & Copy Env File
@@ -209,12 +247,46 @@ app.post('/api/run', async (req, res) => {
         optionsContent += `\n# --- Environment: ${envName} ---\n`;
         optionsContent += envContent + '\n';
 
-        // B. Job Overrides
+        // B. Job Overrides (handle options modifications here)
         optionsContent += `\n# --- Job: ${jobName} ---\n`;
-        optionsContent += jobContent + '\n';
+        
+        // Handle URIS-MODULE / URIS-FILE overrides logic
+        // If URIS_MODULE_MODE is file, we strip URIS-MODULE from jobContent and add URIS-FILE
+        // If URIS_MODULE_MODE is custom, we strip URIS-MODULE from jobContent and add custom one
+        
+        const lines = jobContent.split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            // Skip URIS-MODULE if we are overriding it
+            if ((options.urisMode === 'file' || options.urisMode === 'custom') && 
+                (trimmed.startsWith('URIS-MODULE') || trimmed.startsWith('URIS_MODULE'))) {
+                optionsContent += `# OVERRIDDEN: ${line}\n`;
+                continue;
+            }
+             // Skip PROCESS-MODULE if we are overriding it
+             if ((options.processMode === 'custom') && 
+             (trimmed.startsWith('PROCESS-MODULE') || trimmed.startsWith('PROCESS_MODULE'))) {
+             optionsContent += `# OVERRIDDEN: ${line}\n`;
+             continue;
+         }
+            optionsContent += line + '\n';
+        }
+
+        // Add Overrides
+        optionsContent += `\n# --- Run Overrides ---\n`;
+        if (options.urisMode === 'file' && options.urisFile) {
+            optionsContent += `URIS-FILE=${options.urisFile}\n`;
+        } else if (options.urisMode === 'custom' && options.customUrisModule) {
+            // Assuming the custom module is in support/collectors, we need the path relative to XCC root or similar.
+            // For now, using the absolute path or relative path provided
+            optionsContent += `URIS-MODULE=${path.join(COLLECTORS_DIR, options.customUrisModule)}\n`;
+        }
+
+        if (options.processMode === 'custom' && options.customProcessModule) {
+             optionsContent += `PROCESS-MODULE=${path.join(COLLECTORS_DIR, options.customProcessModule)}\n`;
+        }
 
         // C. Runtime Settings
-        optionsContent += `\n# --- Runtime Settings ---\n`;
         if (options.limit) {
             optionsContent += `URIS-MODULE.LIMIT=${options.limit}\n`;
             optionsContent += `PROCESS-MODULE.LIMIT=${options.limit}\n`;
@@ -224,11 +296,6 @@ app.post('/api/run', async (req, res) => {
         optionsContent += `URIS-MODULE.DRY-RUN=${dryRunVal}\n`;
         optionsContent += `PROCESS-MODULE.DRY-RUN=${dryRunVal}\n`;
         
-        // Standard CORB property is usually THREAD-COUNT, but sticking to provided convention if any. 
-        // User's previous code used THREAD_COUNT. Standard CORB is 'THREAD-COUNT'. 
-        // I will use 'THREAD-COUNT' to be safe for CORB, or what was requested.
-        // User didn't explicitly specify key for threads in the last prompt list, but earlier code had it.
-        // I will write THREAD-COUNT as it is standard.
         optionsContent += `THREAD-COUNT=${options.threadCount}\n`;
 
         await fs.writeFile(path.join(runDir, 'job.options'), optionsContent);
@@ -270,5 +337,5 @@ app.delete('/api/run/:projectId/:runId', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Watching: ${WORKING_DIR}`);
+  console.log(`Working Dir: ${WORKING_DIR}`);
 });
