@@ -7,7 +7,7 @@ import { Input } from "../../components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { fetchSupportCollectors, uploadFile } from "../../lib/api";
+import { fetchSupportCollectors, fetchSupportProcessors, uploadFile } from "../../lib/api";
 import { Upload, FileCode } from "lucide-react";
 import { toast } from "sonner";
 
@@ -47,10 +47,12 @@ export function RunDialog({ open, onOpenChange, jobName, projectName, environmen
   const [customProcessModule, setCustomProcessModule] = useState<string>("");
 
   const [collectors, setCollectors] = useState<string[]>([]);
+  const [processors, setProcessors] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
         fetchSupportCollectors().then(setCollectors).catch(console.error);
+        fetchSupportProcessors().then(setProcessors).catch(console.error);
     }
   }, [open]);
 
@@ -212,18 +214,18 @@ export function RunDialog({ open, onOpenChange, jobName, projectName, environmen
                     <div className="flex items-start space-x-2">
                         <RadioGroupItem value="custom" id="p-custom" className="mt-1" />
                         <div className="flex-1">
-                            <Label htmlFor="p-custom" className="font-medium">Custom (support/collectors/)</Label>
-                            <p className="text-xs text-muted-foreground mb-2">Select a script from the shared collectors folder to use as processor.</p>
+                            <Label htmlFor="p-custom" className="font-medium">Custom (support/processors/)</Label>
+                            <p className="text-xs text-muted-foreground mb-2">Select a script from the shared processors folder to use as processor.</p>
                             {processMode === 'custom' && (
                                 <Select value={customProcessModule} onValueChange={setCustomProcessModule}>
                                     <SelectTrigger className="w-full">
                                         <SelectValue placeholder="Select process script..." />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {collectors.length === 0 ? (
-                                            <div className="p-2 text-xs text-muted-foreground">No scripts found</div>
+                                        {processors.length === 0 ? (
+                                            <div className="p-2 text-xs text-muted-foreground">No scripts found in support/processors</div>
                                         ) : (
-                                            collectors.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)
+                                            processors.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)
                                         )}
                                     </SelectContent>
                                 </Select>

@@ -20,6 +20,12 @@ export async function fetchSupportCollectors(): Promise<string[]> {
     return res.json();
 }
 
+export async function fetchSupportProcessors(): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/support/processors`);
+    if (!res.ok) throw new Error("Failed to fetch support processors");
+    return res.json();
+}
+
 export async function uploadFile(file: File): Promise<{ path: string, filename: string }> {
     const formData = new FormData();
     formData.append('file', file);

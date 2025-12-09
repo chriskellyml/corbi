@@ -19,6 +19,7 @@ const ENV_DIR = path.join(WORKING_DIR, 'env');
 const RUNS_DIR = path.join(WORKING_DIR, 'runs');
 const SUPPORT_DIR = path.join(WORKING_DIR, 'support');
 const COLLECTORS_DIR = path.join(SUPPORT_DIR, 'collectors');
+const PROCESSORS_DIR = path.join(SUPPORT_DIR, 'processors');
 const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
 
 // Ensure working directory exists
@@ -40,6 +41,14 @@ if (!existsSync(COLLECTORS_DIR)) {
         mkdirSync(COLLECTORS_DIR, { recursive: true });
         fs.writeFile(path.join(COLLECTORS_DIR, 'example-collector.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Collector :)\ncts:uris((),(),cts:and-query(()))');
     } catch(e) { console.error("Failed to create collectors dir", e); }
+}
+
+// Ensure support/processors exists with a dummy file if needed
+if (!existsSync(PROCESSORS_DIR)) {
+    try {
+        mkdirSync(PROCESSORS_DIR, { recursive: true });
+        fs.writeFile(path.join(PROCESSORS_DIR, 'example-processor.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Processor :)\ndeclare variable $URI as xs:string external;\nxdmp:log($URI)');
+    } catch(e) { console.error("Failed to create processors dir", e); }
 }
 
 // Ensure uploads dir
@@ -191,6 +200,17 @@ app.get('/api/support/collectors', async (req, res) => {
     }
 });
 
+// GET /api/support/processors
+app.get('/api/support/processors', async (req, res) => {
+    try {
+        if (!existsSync(PROCESSORS_DIR)) return res.json([]);
+        const files = await fs.readdir(PROCESSORS_DIR);
+        res.json(files.filter(f => !f.startsWith('.')));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // POST /api/upload
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -277,13 +297,12 @@ app.post('/api/run', async (req, res) => {
         if (options.urisMode === 'file' && options.urisFile) {
             optionsContent += `URIS-FILE=${options.urisFile}\n`;
         } else if (options.urisMode === 'custom' && options.customUrisModule) {
-            // Assuming the custom module is in support/collectors, we need the path relative to XCC root or similar.
-            // For now, using the absolute path or relative path provided
             optionsContent += `URIS-MODULE=${path.join(COLLECTORS_DIR, options.customUrisModule)}\n`;
         }
 
         if (options.processMode === 'custom' && options.customProcessModule) {
-             optionsContent += `PROCESS-MODULE=${path.join(COLLECTORS_DIR, options.customProcessModule)}\n`;
+             // Updated to use PROCESSORS_DIR
+             optionsContent += `PROCESS-MODULE=${path.join(PROCESSORS_DIR, options.customProcessModule)}\n`;
         }
 
         // C. Runtime Settings
