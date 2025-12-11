@@ -6,11 +6,21 @@ import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { RunDialog, RunOptions } from "../components/corb/RunDialog";
 import { Project, ProjectRun } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun } from "../lib/api";
-import { Play } from "lucide-react";
+import { Play, AlertTriangle, Save } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
 import { Textarea } from "../components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 
 export default function Index() {
   const [environment, setEnvironment] = useState<string>('LOC');
@@ -22,9 +32,11 @@ export default function Index() {
   // Data state
   const [projects, setProjects] = useState<Project[]>([]);
   const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
+  const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, string>>({}); // Track original state
   const [loading, setLoading] = useState(true);
 
   const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
+  const [isEnvSaveDialogOpen, setIsEnvSaveDialogOpen] = useState(false);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -34,6 +46,7 @@ export default function Index() {
             const [p, e] = await Promise.all([fetchProjects(), fetchEnvFiles()]);
             setProjects(p);
             setEnvFiles(e);
+            setOriginalEnvFiles({ ...e }); // Clone for comparison
             
             // Set default environment if LOC not present
             if (!e['LOC'] && Object.keys(e).length > 0) {
@@ -108,14 +121,19 @@ export default function Index() {
   };
 
   const handleEnvFileChange = (newContent: string) => {
+    // Only update local state, NO auto-save
     setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
-    
-    // Debounce Save
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-        saveFile(null, `${environment}.props`, newContent, 'env')
-            .catch(() => toast.error("Failed to save env file"));
-    }, 1000);
+  };
+
+  const handleSaveEnv = async () => {
+      try {
+          await saveFile(null, `${environment}.props`, envFiles[environment], 'env');
+          setOriginalEnvFiles(prev => ({ ...prev, [environment]: envFiles[environment] }));
+          toast.success("Environment saved successfully");
+          setIsEnvSaveDialogOpen(false);
+      } catch (e) {
+          toast.error("Failed to save environment file");
+      }
   };
 
   const getCurrentFileContent = () => {
@@ -154,8 +172,6 @@ export default function Index() {
     if (selection?.kind === 'source' && selection.type === 'job') {
         jobName = selection.name;
     } else {
-        // Fallback or error? Assuming user must be on a job screen or we pick default?
-        // The dialog only opens if we are on a job screen (see render below).
         jobName = (selection as any).name; 
     }
 
@@ -181,6 +197,8 @@ export default function Index() {
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
   const isReadOnly = selection?.kind === 'run';
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
+
+  const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
 
   if (loading) {
       return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
@@ -232,12 +250,30 @@ export default function Index() {
 
                      {/* Environment Properties (Only for Source Jobs, contextually) */}
                      {!isReadOnly && (
-                       <div className="w-1/3 border rounded-lg overflow-hidden shadow-sm bg-background">
+                       <div className="w-1/3 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
                          <PropertiesEditor 
                            title={`Environment: ${environment}.props`}
                            content={envFiles[environment] || ""}
                            onChange={handleEnvFileChange}
                          />
+                         {isEnvDirty && (
+                             <div className="p-4 border-t bg-amber-50/80 space-y-3">
+                                <div className="text-xs text-amber-800 flex items-start gap-2">
+                                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                    <div>
+                                        <div className="font-semibold">Unsaved Changes</div>
+                                        <div className="opacity-90">Saves to environment must be saved to come into affect.</div>
+                                    </div>
+                                </div>
+                                <Button 
+                                    onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                    size="sm" 
+                                    className="w-full bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                                >
+                                    <Save className="mr-2 h-4 w-4" /> Save Environment
+                                </Button>
+                             </div>
+                         )}
                        </div>
                      )}
                    </div>
@@ -309,6 +345,24 @@ export default function Index() {
           onRun={handleRunExecution}
         />
       )}
+
+      <AlertDialog open={isEnvSaveDialogOpen} onOpenChange={setIsEnvSaveDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Save Environment Changes?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    You are about to modify the <strong>{environment}</strong> environment configuration.
+                    <br/><br/>
+                    This change will affect <strong>all future runs</strong> that use this environment.
+                    Please confirm that you want to persist these changes.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleSaveEnv}>Yes, Save Changes</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
