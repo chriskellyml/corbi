@@ -282,17 +282,11 @@ export default function Index() {
                 {/* CASE 2: SCRIPT (Source or Run Snapshot) */}
                 {isScript && (
                    <div className="flex-1 border-l border-border relative">
-                     {isReadOnly && (
-                       <div className="absolute top-0 right-0 z-10 p-2">
-                         <div className="bg-amber-100 text-amber-800 text-xs px-2 py-1 rounded border border-amber-200 font-medium">
-                           Read Only (Run Snapshot)
-                         </div>
-                       </div>
-                     )}
                      <ScriptEditor 
                        fileName={selection.kind === 'source' ? selection.name : selection.fileName} 
                        content={getCurrentFileContent()} 
                        onChange={handleContentChange} 
+                       readOnly={isReadOnly}
                      />
                    </div>
                 )}
