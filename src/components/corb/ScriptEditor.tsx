@@ -1,6 +1,8 @@
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { useEffect, useState } from "react";
-import { useTheme } from "next-themes";
+// We'll assume the parent handles the theme provider context or we just check class
+// Ideally we use useTheme from next-themes if available, but checking document class works too
+// for simple switching.
 
 interface ScriptEditorProps {
   content: string;
@@ -10,16 +12,110 @@ interface ScriptEditorProps {
 }
 
 export function ScriptEditor({ content, onChange, fileName, readOnly = false }: ScriptEditorProps) {
-  // Simple extension detection
+  const monaco = useMonaco();
+  const [theme, setTheme] = useState<"vs-light" | "vs-dark">("vs-light");
+
+  // Detect theme from document class (tailwind dark mode)
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const isDark = document.documentElement.classList.contains("dark");
+      setTheme(isDark ? "vs-dark" : "vs-light");
+    });
+    
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    
+    // Initial check
+    if (document.documentElement.classList.contains("dark")) {
+      setTheme("vs-dark");
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Register XQuery Language
+  useEffect(() => {
+    if (monaco) {
+      // Check if already registered
+      const languages = monaco.languages.getLanguages();
+      if (!languages.some((l) => l.id === "xquery")) {
+        monaco.languages.register({ id: "xquery" });
+        
+        monaco.languages.setMonarchTokensProvider("xquery", {
+          ignoreCase: false,
+          tokenizer: {
+            root: [
+              // Comments
+              [/\(:/, "comment", "@comment"],
+              
+              // Strings
+              [/"([^"\\]|\\.)*$/, "string.invalid"], // non-terminated string
+              [/"/, "string", "@string_double"],
+              [/'/, "string", "@string_single"],
+
+              // XML Tags (rough approximation)
+              [/<\w+/, "tag"],
+              [/<\/\w+>/, "tag"],
+              [/>/, "tag"],
+              
+              // Numbers
+              [/\d+/, "number"],
+              
+              // Keywords
+              [/(xquery|version|module|import|declare|variable|function|let|return|for|where|order|by|ascending|descending|if|then|else|typeswitch|case|default|try|catch|map|json|xs|cts|xdmp|fn|math)/, "keyword"],
+              
+              // Built-in prefixes/functions (rough)
+              [/(cts|xdmp|map|json|fn|math):[a-zA-Z0-9_\-]+/, "type.identifier"],
+              
+              // Variables
+              [/\$[a-zA-Z0-9_\-]+/, "variable"],
+            ],
+            comment: [
+              [/[^:)]+/, "comment"],
+              [/:\)/, "comment", "@pop"],
+              [/:/, "comment"]
+            ],
+            string_double: [
+              [/[^\\"]+/, "string"],
+              [/"/, "string", "@pop"]
+            ],
+            string_single: [
+              [/[^\\']+/, "string"],
+              [/'/, "string", "@pop"]
+            ]
+          }
+        });
+
+        // Basic configuration
+        monaco.languages.setLanguageConfiguration("xquery", {
+            comments: {
+                blockComment: ["(:", ":)"],
+            },
+            brackets: [
+                ["{", "}"],
+                ["[", "]"],
+                ["(", ")"],
+            ],
+            autoClosingPairs: [
+                { open: "{", close: "}" },
+                { open: "[", close: "]" },
+                { open: "(", close: ")" },
+                { open: '"', close: '"' },
+                { open: "'", close: "'" },
+            ],
+        });
+      }
+    }
+  }, [monaco]);
+
+  // Determine language
   const extension = fileName.split('.').pop()?.toLowerCase();
-  
   let language = "plaintext";
+  
   if (extension === 'js' || extension === 'sjs') language = "javascript";
-  if (extension === 'json') language = "json";
-  if (extension === 'xml') language = "xml";
-  // XQuery is not standard in Monaco Basic, mapping to XML provides decent tag highlighting
-  // or we could use 'sql' for keyword highlighting, but XML is usually safer for MarkLogic XQuery
-  if (extension === 'xqy' || extension === 'xq') language = "xml"; 
+  else if (extension === 'json') language = "json";
+  else if (extension === 'xml') language = "xml";
+  else if (extension === 'xqy' || extension === 'xq') language = "xquery";
+  else if (extension === 'sql') language = "sql";
 
   return (
     <div className="flex flex-col h-full bg-background border-l border-border">
@@ -28,16 +124,16 @@ export function ScriptEditor({ content, onChange, fileName, readOnly = false }: 
            {fileName}
            {readOnly && <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold tracking-wide">READ ONLY</span>}
         </span>
-        <span className="uppercase text-[10px] opacity-70 font-semibold tracking-wider">{language === 'xml' && (extension === 'xqy' || extension === 'xq') ? 'XQUERY (XML mode)' : language}</span>
+        <span className="uppercase text-[10px] opacity-70 font-semibold tracking-wider">{language}</span>
       </div>
       <div className="flex-1 overflow-hidden relative">
         <Editor
           height="100%"
-          defaultLanguage="plaintext"
+          path={fileName} // Crucial for independent history and model caching per file
           language={language}
           value={content}
           onChange={(value) => onChange(value || "")}
-          theme="vs-light" // Matches the default Shadcn light theme
+          theme={theme}
           options={{
             readOnly: readOnly,
             minimap: { enabled: false },
