@@ -62,6 +62,7 @@ export interface RunOptions {
   customUrisModule?: string;
   processMode: 'default' | 'custom';
   customProcessModule?: string;
+  password?: string;
 }
 
 export async function createRun(
@@ -73,7 +74,13 @@ export async function createRun(
   const res = await fetch(`${API_BASE}/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectId, jobName, envName, options })
+    body: JSON.stringify({ 
+      projectId, 
+      jobName, 
+      envName, 
+      options,
+      password: options.password
+    })
   });
   if (!res.ok) throw new Error("Failed to run job");
   const data = await res.json();

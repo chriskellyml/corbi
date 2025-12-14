@@ -243,7 +243,7 @@ app.post('/api/save', async (req, res) => {
 
 // POST /api/run
 app.post('/api/run', async (req, res) => {
-    const { projectId, jobName, envName, options } = req.body;
+    const { projectId, jobName, envName, options, password } = req.body;
     
     try {
         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
@@ -266,6 +266,11 @@ app.post('/api/run', async (req, res) => {
         // A. Environment
         optionsContent += `\n# --- Environment: ${envName} ---\n`;
         optionsContent += envContent + '\n';
+        
+        // Inject Password if provided
+        if (password) {
+            optionsContent += `# Injected Password\nPASS=${password}\n`;
+        }
 
         // B. Job Overrides (handle options modifications here)
         optionsContent += `\n# --- Job: ${jobName} ---\n`;

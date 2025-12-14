@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { TopBar } from "../components/corb/TopBar";
 import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar";
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { RunDialog, RunOptions } from "../components/corb/RunDialog";
+import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun } from "../lib/api";
-import { Play, AlertTriangle, Save } from "lucide-react";
+import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
@@ -21,22 +22,31 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
+import { cn } from "../lib/utils";
 
 export default function Index() {
   const [environment, setEnvironment] = useState<string>('LOC');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   
-  // New unified selection state
   const [selection, setSelection] = useState<SelectionType | null>(null);
 
   // Data state
   const [projects, setProjects] = useState<Project[]>([]);
   const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
-  const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, string>>({}); // Track original state
+  const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
+  // UI State
   const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
   const [isEnvSaveDialogOpen, setIsEnvSaveDialogOpen] = useState(false);
+  
+  // Password Logic
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [sessionPasswords, setSessionPasswords] = useState<Record<string, string>>({}); 
+  // Key format: `${environment}:${username}`
+  
+  const [pendingRunOptions, setPendingRunOptions] = useState<RunOptions | null>(null);
+  const [pendingRunJobName, setPendingRunJobName] = useState<string | null>(null);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -46,9 +56,8 @@ export default function Index() {
             const [p, e] = await Promise.all([fetchProjects(), fetchEnvFiles()]);
             setProjects(p);
             setEnvFiles(e);
-            setOriginalEnvFiles({ ...e }); // Clone for comparison
+            setOriginalEnvFiles({ ...e });
             
-            // Set default environment if LOC not present
             if (!e['LOC'] && Object.keys(e).length > 0) {
                 setEnvironment(Object.keys(e)[0]);
             }
@@ -63,6 +72,22 @@ export default function Index() {
   }, []);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+
+  // Helper to extract user from env properties
+  const getCurrentEnvUser = () => {
+    const content = envFiles[environment] || "";
+    const lines = content.split('\n');
+    for (const line of lines) {
+        if (line.trim().startsWith('USER=')) {
+            return line.split('=')[1].trim();
+        }
+    }
+    return 'unknown';
+  };
+
+  const currentUserName = getCurrentEnvUser();
+  const passwordKey = `${environment}:${currentUserName}`;
+  const hasPassword = !!sessionPasswords[passwordKey];
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
@@ -89,9 +114,8 @@ export default function Index() {
   };
 
   const handleContentChange = (newContent: string) => {
-    if (!selectedProject || !selection || selection.kind === 'run') return; // Cannot edit run files
+    if (!selectedProject || !selection || selection.kind === 'run') return;
 
-    // Update local state immediately for UI responsiveness
     const newProjects = projects.map(p => {
       if (p.id !== selectedProjectId) return p;
       
@@ -109,19 +133,15 @@ export default function Index() {
     });
     setProjects(newProjects);
 
-    // Debounce Save to API
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
         saveFile(selectedProjectId, selection.name, newContent, selection.type)
-            .then(() => {
-                // Optional: show small saved indicator
-            })
+            .then(() => {})
             .catch(() => toast.error("Failed to save changes"));
     }, 1000);
   };
 
   const handleEnvFileChange = (newContent: string) => {
-    // Only update local state, NO auto-save
     setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
   };
 
@@ -145,7 +165,6 @@ export default function Index() {
       }
       return selectedProject.scripts.find(s => s.name === selection.name)?.content || "";
     } else {
-      // Find run content
       const run = selectedProject.runs.find(r => r.id === selection.runId);
       const env = run?.environments.find(e => e.name === selection.envName);
       if (!env) return "Error: Environment not found";
@@ -164,10 +183,26 @@ export default function Index() {
     return "";
   };
 
-  const handleRunExecution = async (options: RunOptions) => {
+  const executeRun = async (projectId: string, jobName: string, options: RunOptions) => {
+    try {
+        const runId = await createRun(projectId, jobName, environment, options);
+        const updatedProjects = await fetchProjects();
+        setProjects(updatedProjects);
+        toast.success("Job Started", {
+          description: `Run created: ${runId}`,
+          duration: 3000,
+        });
+    } catch (e) {
+        toast.error("Failed to start run");
+    } finally {
+        setPendingRunOptions(null);
+        setPendingRunJobName(null);
+    }
+  };
+
+  const handleRunRequest = async (options: RunOptions) => {
     if (!selectedProjectId) return;
     
-    // Check if we have a selected job
     let jobName = '';
     if (selection?.kind === 'source' && selection.type === 'job') {
         jobName = selection.name;
@@ -175,19 +210,29 @@ export default function Index() {
         jobName = (selection as any).name; 
     }
 
-    try {
-        const runId = await createRun(selectedProjectId, jobName, environment, options);
-        
-        // Optimistically add run or fetch? Fetching is safer to get full structure.
-        const updatedProjects = await fetchProjects();
-        setProjects(updatedProjects);
+    // Check Password
+    if (!hasPassword) {
+        setPendingRunOptions(options);
+        setPendingRunJobName(jobName);
+        setIsPasswordDialogOpen(true);
+    } else {
+        // Inject password
+        const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+        await executeRun(selectedProjectId, jobName, finalOptions);
+    }
+  };
 
-        toast.success("Job Started", {
-          description: `Run created: ${runId}`,
-          duration: 3000,
-        });
-    } catch (e) {
-        toast.error("Failed to start run");
+  const handlePasswordConfirm = (password: string, remember: boolean) => {
+    if (remember) {
+        setSessionPasswords(prev => ({ ...prev, [passwordKey]: password }));
+    }
+    
+    // If we were trying to run, continue the run
+    if (pendingRunOptions && pendingRunJobName && selectedProjectId) {
+        const finalOptions = { ...pendingRunOptions, password };
+        executeRun(selectedProjectId, pendingRunJobName, finalOptions);
+    } else {
+        toast.success("Password updated in memory");
     }
   };
 
@@ -213,7 +258,6 @@ export default function Index() {
       />
       
       <div className="flex-1 flex overflow-hidden">
-        {/* Unified Sidebar */}
         <ProjectSidebar 
           projects={projects} 
           selectedProjectId={selectedProjectId} 
@@ -228,7 +272,6 @@ export default function Index() {
             {selection ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 
-                {/* CASE 1: JOB (Source or Run Options) */}
                 {(isJob || isRunOptions) && (
                    <div className="flex-1 flex gap-4 p-4 overflow-hidden">
                      {/* Job Properties Editor */}
@@ -248,38 +291,81 @@ export default function Index() {
                        )}
                      </div>
 
-                     {/* Environment Properties (Only for Source Jobs, contextually) */}
+                     {/* Environment Properties & Auth */}
                      {!isReadOnly && (
-                       <div className="w-1/3 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                         <PropertiesEditor 
-                           title={`Environment: ${environment}.props`}
-                           content={envFiles[environment] || ""}
-                           onChange={handleEnvFileChange}
-                         />
-                         {isEnvDirty && (
-                             <div className="p-4 border-t bg-amber-50/80 space-y-3">
-                                <div className="text-xs text-amber-800 flex items-start gap-2">
-                                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                                    <div>
-                                        <div className="font-semibold">Unsaved Changes</div>
-                                        <div className="opacity-90">Saves to environment must be saved to come into affect.</div>
+                       <div className="w-1/3 flex flex-col gap-4">
+                           {/* Env Editor */}
+                           <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
+                                <PropertiesEditor 
+                                    title={`Environment: ${environment}.props`}
+                                    content={envFiles[environment] || ""}
+                                    onChange={handleEnvFileChange}
+                                />
+                                {isEnvDirty && (
+                                    <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
+                                        <div className="text-xs text-amber-800 flex items-start gap-2">
+                                            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                            <div>
+                                                <div className="font-semibold">Unsaved Changes</div>
+                                                <div className="opacity-90">Changes must be saved to take effect.</div>
+                                            </div>
+                                        </div>
+                                        <Button 
+                                            onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                            size="sm" 
+                                            className="w-full bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                                        >
+                                            <Save className="mr-2 h-4 w-4" /> Save Environment
+                                        </Button>
+                                    </div>
+                                )}
+                           </div>
+
+                           {/* Auth Section */}
+                           <div className="border rounded-lg shadow-sm bg-background p-4 shrink-0">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-semibold text-sm flex items-center gap-2">
+                                        <KeyRound className="h-4 w-4 text-muted-foreground" />
+                                        Authentication
+                                    </h3>
+                                    <div className={cn(
+                                        "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
+                                        hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
+                                    )}>
+                                        {hasPassword ? "Authorized" : "Unauthorized"}
                                     </div>
                                 </div>
+                                
+                                <div className="text-xs text-muted-foreground mb-3">
+                                    User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
+                                    <br/>
+                                    {hasPassword 
+                                        ? "Password stored in session memory." 
+                                        : "No password currently stored for this session."
+                                    }
+                                </div>
+
                                 <Button 
-                                    onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                    variant={hasPassword ? "outline" : "secondary"} 
                                     size="sm" 
-                                    className="w-full bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                                    className="w-full"
+                                    onClick={() => {
+                                        setPendingRunOptions(null); // Just updating, not running
+                                        setIsPasswordDialogOpen(true);
+                                    }}
                                 >
-                                    <Save className="mr-2 h-4 w-4" /> Save Environment
+                                    {hasPassword ? (
+                                        <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
+                                    ) : (
+                                        <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
+                                    )}
                                 </Button>
-                             </div>
-                         )}
+                           </div>
                        </div>
                      )}
                    </div>
                 )}
 
-                {/* CASE 2: SCRIPT (Source or Run Snapshot) */}
                 {isScript && (
                    <div className="flex-1 border-l border-border relative">
                      <ScriptEditor 
@@ -291,7 +377,6 @@ export default function Index() {
                    </div>
                 )}
 
-                {/* CASE 3: LOGS or CSV */}
                 {isLogOrCsv && (
                    <div className="flex-1 flex flex-col bg-background">
                       <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
@@ -308,7 +393,6 @@ export default function Index() {
 
               </div>
             ) : (
-              // Empty State
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
                 <div className="max-w-md">
                   <h3 className="text-xl font-semibold mb-2 text-foreground">
@@ -320,7 +404,6 @@ export default function Index() {
             )}
           </div>
         ) : (
-          // No Project Selected State
           <div className="flex-1 flex items-center justify-center text-muted-foreground bg-muted/5">
              <div className="text-center max-w-lg">
                 <MadeWithDyad />
@@ -336,9 +419,22 @@ export default function Index() {
           jobName={selection.name}
           projectName={selectedProject.name}
           environment={environment}
-          onRun={handleRunExecution}
+          onRun={handleRunRequest}
         />
       )}
+      
+      <PasswordDialog 
+        open={isPasswordDialogOpen}
+        onOpenChange={(open) => {
+            setIsPasswordDialogOpen(open);
+            if (!open && pendingRunOptions) {
+                setPendingRunOptions(null); // Cancel pending run if dialog closed without confirming
+            }
+        }}
+        envName={environment}
+        userName={currentUserName}
+        onConfirm={handlePasswordConfirm}
+      />
 
       <AlertDialog open={isEnvSaveDialogOpen} onOpenChange={setIsEnvSaveDialogOpen}>
         <AlertDialogContent>
