@@ -147,7 +147,7 @@ export function ScriptEditor({ content, onChange, fileName, readOnly = false }: 
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Monaco', monospace",
             renderLineHighlight: "all",
           }}
-          className="border-none outline-none"
+          className="border-none outline-none vimium-input"
         />
       </div>
     </div>
