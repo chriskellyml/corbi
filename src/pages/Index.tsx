@@ -78,8 +78,9 @@ export default function Index() {
     const content = envFiles[environment] || "";
     const lines = content.split('\n');
     for (const line of lines) {
-        if (line.trim().startsWith('USER=')) {
-            return line.split('=')[1].trim();
+        const trimmed = line.trim();
+        if (trimmed.startsWith('XCC-USER=')) {
+            return trimmed.split('=')[1].trim();
         }
     }
     return 'unknown';
