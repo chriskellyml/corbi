@@ -79,8 +79,16 @@ export default function Index() {
     const lines = content.split('\n');
     for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed.startsWith('XCC-USER=')) {
-            return trimmed.split('=')[1].trim();
+        // Skip empty lines and comments
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex !== -1) {
+            const key = trimmed.substring(0, eqIndex).trim();
+            // Robust check for XCC-USER
+            if (key === 'XCC-USER') {
+                return trimmed.substring(eqIndex + 1).trim();
+            }
         }
     }
     return 'unknown';
