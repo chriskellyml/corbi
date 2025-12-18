@@ -53,6 +53,56 @@ export async function saveFile(
   if (!res.ok) throw new Error("Failed to save file");
 }
 
+export async function copyFile(
+    projectId: string,
+    sourceName: string,
+    targetName: string,
+    type: 'job' | 'script'
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/files/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, sourceName, targetName, type })
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to copy file");
+    }
+}
+
+export async function renameFile(
+    projectId: string,
+    oldName: string,
+    newName: string,
+    type: 'job' | 'script'
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/files/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, oldName, newName, type })
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to rename file");
+    }
+}
+
+export async function deleteFile(
+    projectId: string,
+    fileName: string,
+    type: 'job' | 'script'
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/files`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, fileName, type })
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete file");
+    }
+}
+
 export interface RunOptions {
   limit: number | null;
   dryRun: boolean;

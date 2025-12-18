@@ -1,5 +1,5 @@
 import { Project, ProjectRun } from "../../data/mock-fs";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2 } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -7,6 +7,7 @@ import { ScrollArea } from "../../components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Badge } from "../../components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../../components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
 
 // Define the selection structure shared with parent
 export type SelectionType = 
@@ -20,6 +21,12 @@ interface ProjectSidebarProps {
   selection: SelectionType | null;
   onSelectFile: (selection: SelectionType) => void;
   onDeleteRun: (projectId: string, runId: string) => void;
+  // New props for source management
+  onCreateJob: (projectId: string) => void;
+  onRunJob: (jobName: string) => void;
+  onCopyFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
+  onRenameFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
+  onDeleteFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
 }
 
 export function ProjectSidebar({ 
@@ -28,7 +35,12 @@ export function ProjectSidebar({
   onSelectProject, 
   selection,
   onSelectFile,
-  onDeleteRun
+  onDeleteRun,
+  onCreateJob,
+  onRunJob,
+  onCopyFile,
+  onRenameFile,
+  onDeleteFile
 }: ProjectSidebarProps) {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -92,29 +104,44 @@ export function ProjectSidebar({
               </span>
             </AccordionTrigger>
             <AccordionContent className="pt-1 pb-4">
-               {/* Jobs */}
-               <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-2 mb-1">JOBS</div>
+               {/* Jobs Header */}
+               <div className="px-4 py-1 flex items-center justify-between mt-2 mb-1 group">
+                   <div className="text-xs font-semibold text-muted-foreground/70">JOBS</div>
+                   <Button variant="ghost" size="icon" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); onCreateJob(selectedProject.id); }}>
+                       <Plus className="h-3 w-3" />
+                   </Button>
+               </div>
+               
                {selectedProject.jobs.map(job => (
                  <FileItem
                    key={job.name}
                    name={job.name}
+                   type="job"
                    icon={FileText}
                    iconColor="text-blue-500"
                    isSelected={selection?.kind === 'source' && selection.name === job.name}
                    onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
+                   onRun={() => onRunJob(job.name)}
+                   onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
+                   onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
+                   onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
                  />
                ))}
 
-               {/* Scripts */}
+               {/* Scripts Header */}
                <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">SCRIPTS</div>
                {selectedProject.scripts.map(script => (
                  <FileItem
                    key={script.name}
                    name={script.name}
+                   type="script"
                    icon={FileCode}
                    iconColor="text-yellow-500"
                    isSelected={selection?.kind === 'source' && selection.name === script.name}
                    onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
+                   onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
+                   onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
+                   onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
                  />
                ))}
             </AccordionContent>
@@ -155,18 +182,53 @@ export function ProjectSidebar({
 
 // Helper Components
 
-function FileItem({ name, icon: Icon, iconColor, isSelected, onClick }: any) {
+function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRun, onCopy, onRename, onDelete }: any) {
   return (
-    <button
-      onClick={onClick}
+    <div
       className={cn(
-        "w-full flex items-center gap-2 px-6 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground text-left border-l-2 border-transparent",
+        "group w-full flex items-center gap-2 px-6 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground border-l-2 border-transparent relative cursor-pointer",
         isSelected && "bg-accent text-accent-foreground border-primary"
       )}
+      onClick={onClick}
     >
       <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
-      <span className="truncate">{name}</span>
-    </button>
+      <span className="truncate flex-1">{name}</span>
+      
+      {/* Actions (visible on hover) */}
+      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm">
+          {type === 'job' && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100" 
+                onClick={(e) => { e.stopPropagation(); onRun(); }}
+                title="Run Job"
+              >
+                  <Play className="h-3 w-3 fill-current" />
+              </Button>
+          )}
+          
+          <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => e.stopPropagation()}>
+                    <MoreHorizontal className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onCopy(); }}>
+                      <Copy className="mr-2 h-4 w-4" /> Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRename(); }}>
+                      <Pencil className="mr-2 h-4 w-4" /> Rename / Re-order
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-destructive focus:text-destructive">
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  </DropdownMenuItem>
+              </DropdownMenuContent>
+          </DropdownMenu>
+      </div>
+    </div>
   );
 }
 

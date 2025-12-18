@@ -6,12 +6,13 @@ import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { RunDialog, RunOptions } from "../components/corb/RunDialog";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun } from "../lib/api";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile } from "../lib/api";
 import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
 import { Textarea } from "../components/ui/textarea";
+import { Input } from "../components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
 
 export default function Index() {
@@ -40,55 +42,56 @@ export default function Index() {
   const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
   const [isEnvSaveDialogOpen, setIsEnvSaveDialogOpen] = useState(false);
   
+  // File Ops State
+  const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
+  const [nameDialogMode, setNameDialogMode] = useState<'create'|'rename'|'copy'>('create');
+  const [nameDialogValue, setNameDialogValue] = useState("");
+  const [fileOpContext, setFileOpContext] = useState<{ projectId: string, fileName?: string, type: 'job'|'script' } | null>(null);
+
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+
   // Password Logic
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [sessionPasswords, setSessionPasswords] = useState<Record<string, string>>({}); 
-  // Key format: `${environment}:${username}`
-  
   const [pendingRunOptions, setPendingRunOptions] = useState<RunOptions | null>(null);
   const [pendingRunJobName, setPendingRunJobName] = useState<string | null>(null);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const loadData = async () => {
-        try {
-            const [p, e] = await Promise.all([fetchProjects(), fetchEnvFiles()]);
-            setProjects(p);
-            setEnvFiles(e);
-            setOriginalEnvFiles({ ...e });
-            
-            if (!e['LOC'] && Object.keys(e).length > 0) {
-                setEnvironment(Object.keys(e)[0]);
-            }
-        } catch (err) {
-            toast.error("Failed to load data. Is the server running?");
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
     loadData();
   }, []);
 
+  const loadData = async () => {
+    try {
+        const [p, e] = await Promise.all([fetchProjects(), fetchEnvFiles()]);
+        setProjects(p);
+        setEnvFiles(e);
+        setOriginalEnvFiles({ ...e });
+        
+        if (!e['LOC'] && Object.keys(e).length > 0) {
+            setEnvironment(Object.keys(e)[0]);
+        }
+    } catch (err) {
+        toast.error("Failed to load data. Is the server running?");
+        console.error(err);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
-  // Helper to extract user from env properties
   const getCurrentEnvUser = () => {
     const content = envFiles[environment] || "";
     const lines = content.split('\n');
     for (const line of lines) {
         const trimmed = line.trim();
-        // Skip empty lines and comments
         if (!trimmed || trimmed.startsWith('#')) continue;
-        
         const eqIndex = trimmed.indexOf('=');
         if (eqIndex !== -1) {
             const key = trimmed.substring(0, eqIndex).trim();
-            // Robust check for XCC-USER
-            if (key === 'XCC-USER') {
-                return trimmed.substring(eqIndex + 1).trim();
-            }
+            if (key === 'XCC-USER') return trimmed.substring(eqIndex + 1).trim();
         }
     }
     return 'unknown';
@@ -103,6 +106,84 @@ export default function Index() {
     setSelection(null);
   };
 
+  const handleCreateJob = (projectId: string) => {
+    setFileOpContext({ projectId, type: 'job' });
+    setNameDialogMode('create');
+    setNameDialogValue("");
+    setIsNameDialogOpen(true);
+  };
+
+  const handleCopyFile = (projectId: string, fileName: string, type: 'job'|'script') => {
+    setFileOpContext({ projectId, fileName, type });
+    setNameDialogMode('copy');
+    setNameDialogValue(`${fileName.replace(/\.(job|xqy|js)$/, '')}-copy.${fileName.split('.').pop()}`);
+    setIsNameDialogOpen(true);
+  };
+
+  const handleRenameFile = (projectId: string, fileName: string, type: 'job'|'script') => {
+    setFileOpContext({ projectId, fileName, type });
+    setNameDialogMode('rename');
+    setNameDialogValue(fileName);
+    setIsNameDialogOpen(true);
+  };
+
+  const handleDeleteFile = (projectId: string, fileName: string, type: 'job'|'script') => {
+    setFileOpContext({ projectId, fileName, type });
+    setIsDeleteAlertOpen(true);
+  };
+
+  const submitFileOp = async () => {
+    if (!fileOpContext || !nameDialogValue) return;
+    const { projectId, fileName, type } = fileOpContext;
+    
+    try {
+        if (nameDialogMode === 'create') {
+            const finalName = nameDialogValue.endsWith('.job') ? nameDialogValue : `${nameDialogValue}.job`;
+            await saveFile(projectId, finalName, "", 'job');
+            toast.success("Job created");
+        } else if (nameDialogMode === 'copy' && fileName) {
+            await copyFile(projectId, fileName, nameDialogValue, type);
+            toast.success("File duplicated");
+        } else if (nameDialogMode === 'rename' && fileName) {
+            await renameFile(projectId, fileName, nameDialogValue, type);
+            toast.success("File renamed");
+            // If currently selected, update selection
+            if (selection?.kind === 'source' && selection.name === fileName) {
+                setSelection({ ...selection, name: nameDialogValue });
+            }
+        }
+        await loadData();
+        setIsNameDialogOpen(false);
+    } catch (err: any) {
+        toast.error(err.message || "Operation failed");
+    }
+  };
+
+  const submitDelete = async () => {
+      if (!fileOpContext || !fileOpContext.fileName) return;
+      try {
+          await deleteFile(fileOpContext.projectId, fileOpContext.fileName, fileOpContext.type);
+          toast.success("File deleted");
+          if (selection?.kind === 'source' && selection.name === fileOpContext.fileName) {
+              setSelection(null);
+          }
+          await loadData();
+      } catch (err) {
+          toast.error("Delete failed");
+      } finally {
+          setIsDeleteAlertOpen(false);
+      }
+  };
+
+  const handleRunJobFromSidebar = (jobName: string) => {
+     if (selection?.kind !== 'source' || selection.name !== jobName) {
+         setSelection({ kind: 'source', type: 'job', name: jobName });
+     }
+     // Small delay to ensure state updates
+     setTimeout(() => setIsRunDialogOpen(true), 50);
+  };
+
+  // ... (Keep existing run handlers: handleDeleteRun, executeRun, handleRunRequest, etc.)
   const handleDeleteRun = async (projectId: string, runId: string) => {
     try {
         await deleteRun(projectId, runId);
@@ -127,7 +208,6 @@ export default function Index() {
 
     const newProjects = projects.map(p => {
       if (p.id !== selectedProjectId) return p;
-      
       if (selection.type === 'job') {
         return {
           ...p,
@@ -167,7 +247,6 @@ export default function Index() {
 
   const getCurrentFileContent = () => {
     if (!selectedProject || !selection) return "";
-
     if (selection.kind === 'source') {
       if (selection.type === 'job') {
         return selectedProject.jobs.find(j => j.name === selection.name)?.content || "";
@@ -177,17 +256,12 @@ export default function Index() {
       const run = selectedProject.runs.find(r => r.id === selection.runId);
       const env = run?.environments.find(e => e.name === selection.envName);
       if (!env) return "Error: Environment not found";
-
       if (selection.category === 'root') {
         if (selection.fileName === 'job.options') return env.options;
         if (selection.fileName === 'export.csv') return env.export;
       }
-      if (selection.category === 'logs') {
-        return env.logs.find(f => f.name === selection.fileName)?.content || "";
-      }
-      if (selection.category === 'scripts') {
-        return env.scripts.find(f => f.name === selection.fileName)?.content || "";
-      }
+      if (selection.category === 'logs') return env.logs.find(f => f.name === selection.fileName)?.content || "";
+      if (selection.category === 'scripts') return env.scripts.find(f => f.name === selection.fileName)?.content || "";
     }
     return "";
   };
@@ -195,8 +269,11 @@ export default function Index() {
   const executeRun = async (projectId: string, jobName: string, options: RunOptions) => {
     try {
         const runId = await createRun(projectId, jobName, environment, options);
-        const updatedProjects = await fetchProjects();
-        setProjects(updatedProjects);
+        // await loadData(); // Full refresh to get new run
+        // Optimization: just fetch projects
+        const p = await fetchProjects();
+        setProjects(p);
+
         toast.success("Job Started", {
           description: `Run created: ${runId}`,
           duration: 3000,
@@ -216,16 +293,15 @@ export default function Index() {
     if (selection?.kind === 'source' && selection.type === 'job') {
         jobName = selection.name;
     } else {
-        jobName = (selection as any).name; 
+        jobName = (pendingRunJobName || ""); // Fallback
     }
-
+    
     // Check Password
     if (!hasPassword) {
         setPendingRunOptions(options);
         setPendingRunJobName(jobName);
         setIsPasswordDialogOpen(true);
     } else {
-        // Inject password
         const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
         await executeRun(selectedProjectId, jobName, finalOptions);
     }
@@ -235,8 +311,6 @@ export default function Index() {
     if (remember) {
         setSessionPasswords(prev => ({ ...prev, [passwordKey]: password }));
     }
-    
-    // If we were trying to run, continue the run
     if (pendingRunOptions && pendingRunJobName && selectedProjectId) {
         const finalOptions = { ...pendingRunOptions, password };
         executeRun(selectedProjectId, pendingRunJobName, finalOptions);
@@ -245,13 +319,11 @@ export default function Index() {
     }
   };
 
-  // Determine what type of editor/viewer to show
   const isJob = selection?.kind === 'source' && selection.type === 'job';
   const isRunOptions = selection?.kind === 'run' && selection.fileName === 'job.options';
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
   const isReadOnly = selection?.kind === 'run';
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
-
   const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
 
   if (loading) {
@@ -274,16 +346,19 @@ export default function Index() {
           selection={selection}
           onSelectFile={setSelection}
           onDeleteRun={handleDeleteRun}
+          onCreateJob={handleCreateJob}
+          onRunJob={handleRunJobFromSidebar}
+          onCopyFile={handleCopyFile}
+          onRenameFile={handleRenameFile}
+          onDeleteFile={handleDeleteFile}
         />
 
         {selectedProject ? (
           <div className="flex-1 flex flex-col min-w-0 bg-muted/10">
             {selection ? (
               <div className="flex-1 flex flex-col overflow-hidden">
-                
                 {(isJob || isRunOptions) && (
                    <div className="flex-1 flex gap-4 p-4 overflow-hidden">
-                     {/* Job Properties Editor */}
                      <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
                        <PropertiesEditor 
                          title={isReadOnly ? `Run Snapshot: ${selection.fileName}` : `Job Properties: ${selection.name}`}
@@ -300,10 +375,8 @@ export default function Index() {
                        )}
                      </div>
 
-                     {/* Environment Properties & Auth */}
                      {!isReadOnly && (
                        <div className="w-1/3 flex flex-col gap-4">
-                           {/* Env Editor */}
                            <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
                                 <PropertiesEditor 
                                     title={`Environment: ${environment}.props`}
@@ -330,7 +403,6 @@ export default function Index() {
                                 )}
                            </div>
 
-                           {/* Auth Section */}
                            <div className="border rounded-lg shadow-sm bg-background p-4 shrink-0">
                                 <div className="flex items-center justify-between mb-3">
                                     <h3 className="font-semibold text-sm flex items-center gap-2">
@@ -344,7 +416,6 @@ export default function Index() {
                                         {hasPassword ? "Authorized" : "Unauthorized"}
                                     </div>
                                 </div>
-                                
                                 <div className="text-xs text-muted-foreground mb-3">
                                     User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
                                     <br/>
@@ -353,13 +424,12 @@ export default function Index() {
                                         : "No password currently stored for this session."
                                     }
                                 </div>
-
                                 <Button 
                                     variant={hasPassword ? "outline" : "secondary"} 
                                     size="sm" 
                                     className="w-full"
                                     onClick={() => {
-                                        setPendingRunOptions(null); // Just updating, not running
+                                        setPendingRunOptions(null); 
                                         setIsPasswordDialogOpen(true);
                                     }}
                                 >
@@ -374,7 +444,6 @@ export default function Index() {
                      )}
                    </div>
                 )}
-
                 {isScript && (
                    <div className="flex-1 border-l border-border relative">
                      <ScriptEditor 
@@ -385,7 +454,6 @@ export default function Index() {
                      />
                    </div>
                 )}
-
                 {isLogOrCsv && (
                    <div className="flex-1 flex flex-col bg-background">
                       <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
@@ -399,7 +467,6 @@ export default function Index() {
                       />
                    </div>
                 )}
-
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
@@ -421,11 +488,11 @@ export default function Index() {
         )}
       </div>
 
-      {selectedProject && selection?.kind === 'source' && selection.type === 'job' && (
+      {selectedProject && isRunDialogOpen && (
         <RunDialog 
           open={isRunDialogOpen} 
           onOpenChange={setIsRunDialogOpen}
-          jobName={selection.name}
+          jobName={selection?.kind === 'source' && selection.type === 'job' ? selection.name : (pendingRunJobName || "")}
           projectName={selectedProject.name}
           environment={environment}
           onRun={handleRunRequest}
@@ -437,7 +504,7 @@ export default function Index() {
         onOpenChange={(open) => {
             setIsPasswordDialogOpen(open);
             if (!open && pendingRunOptions) {
-                setPendingRunOptions(null); // Cancel pending run if dialog closed without confirming
+                setPendingRunOptions(null);
             }
         }}
         envName={environment}
@@ -451,9 +518,6 @@ export default function Index() {
                 <AlertDialogTitle>Save Environment Changes?</AlertDialogTitle>
                 <AlertDialogDescription>
                     You are about to modify the <strong>{environment}</strong> environment configuration.
-                    <br/><br/>
-                    This change will affect <strong>all future runs</strong> that use this environment.
-                    Please confirm that you want to persist these changes.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -462,6 +526,53 @@ export default function Index() {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Name Input Dialog for Create/Rename/Copy */}
+      <Dialog open={isNameDialogOpen} onOpenChange={setIsNameDialogOpen}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>
+                      {nameDialogMode === 'create' && 'Create New Job'}
+                      {nameDialogMode === 'copy' && 'Duplicate File'}
+                      {nameDialogMode === 'rename' && 'Rename / Re-order File'}
+                  </DialogTitle>
+              </DialogHeader>
+              <div className="py-4">
+                  <Input 
+                    value={nameDialogValue} 
+                    onChange={(e) => setNameDialogValue(e.target.value)} 
+                    placeholder="Enter file name..."
+                    autoFocus
+                  />
+                  {nameDialogMode === 'rename' && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                          Tip: Use prefixes like <code>01-</code>, <code>02-</code> to re-order files.
+                      </p>
+                  )}
+              </div>
+              <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsNameDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={submitFileOp}>Confirm</Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Alert */}
+      <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This will permanently delete <strong>{fileOpContext?.fileName}</strong>. This action cannot be undone.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={submitDelete}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

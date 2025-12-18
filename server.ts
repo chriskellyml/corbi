@@ -241,6 +241,74 @@ app.post('/api/save', async (req, res) => {
     }
 });
 
+// POST /api/files/copy
+app.post('/api/files/copy', async (req, res) => {
+    const { projectId, sourceName, targetName, type } = req.body;
+    try {
+        let sourcePath, targetPath;
+        if (type === 'job') {
+            sourcePath = safePath(path.join(PROJECTS_DIR, projectId), sourceName);
+            targetPath = safePath(path.join(PROJECTS_DIR, projectId), targetName);
+        } else if (type === 'script') {
+            sourcePath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), sourceName);
+            targetPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), targetName);
+        } else {
+            return res.status(400).json({ error: 'Invalid type' });
+        }
+
+        if (existsSync(targetPath)) return res.status(400).json({ error: 'Target file already exists' });
+        
+        await fs.copyFile(sourcePath, targetPath);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/files/rename
+app.post('/api/files/rename', async (req, res) => {
+    const { projectId, oldName, newName, type } = req.body;
+    try {
+        let oldPath, newPath;
+        if (type === 'job') {
+            oldPath = safePath(path.join(PROJECTS_DIR, projectId), oldName);
+            newPath = safePath(path.join(PROJECTS_DIR, projectId), newName);
+        } else if (type === 'script') {
+            oldPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), oldName);
+            newPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), newName);
+        } else {
+            return res.status(400).json({ error: 'Invalid type' });
+        }
+
+        if (existsSync(newPath)) return res.status(400).json({ error: 'Target file already exists' });
+
+        await fs.rename(oldPath, newPath);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/files
+app.delete('/api/files', async (req, res) => {
+    const { projectId, fileName, type } = req.body;
+    try {
+        let filePath;
+        if (type === 'job') {
+            filePath = safePath(path.join(PROJECTS_DIR, projectId), fileName);
+        } else if (type === 'script') {
+            filePath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), fileName);
+        } else {
+            return res.status(400).json({ error: 'Invalid type' });
+        }
+
+        await fs.unlink(filePath);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // POST /api/run
 app.post('/api/run', async (req, res) => {
     const { projectId, jobName, envName, options, password } = req.body;
