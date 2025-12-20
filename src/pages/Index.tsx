@@ -116,14 +116,35 @@ export default function Index() {
   const handleCopyFile = (projectId: string, fileName: string, type: 'job'|'script') => {
     setFileOpContext({ projectId, fileName, type });
     setNameDialogMode('copy');
-    setNameDialogValue(`${fileName.replace(/\.(job|xqy|js)$/, '')}-copy.${fileName.split('.').pop()}`);
+    
+    // Strip .job extension for display if type is job
+    let displayValue = fileName;
+    if (type === 'job') {
+        displayValue = fileName.replace(/\.job$/, '');
+        setNameDialogValue(`${displayValue}-copy`);
+    } else {
+        // For scripts, maybe keep extension or append -copy before it
+        const parts = fileName.split('.');
+        if (parts.length > 1) {
+            const ext = parts.pop();
+            setNameDialogValue(`${parts.join('.')}-copy.${ext}`);
+        } else {
+            setNameDialogValue(`${fileName}-copy`);
+        }
+    }
+    
     setIsNameDialogOpen(true);
   };
 
   const handleRenameFile = (projectId: string, fileName: string, type: 'job'|'script') => {
     setFileOpContext({ projectId, fileName, type });
     setNameDialogMode('rename');
-    setNameDialogValue(fileName);
+    
+    // Strip .job extension for display if type is job
+    let displayValue = fileName;
+    if (type === 'job') displayValue = fileName.replace(/\.job$/, '');
+    
+    setNameDialogValue(displayValue);
     setIsNameDialogOpen(true);
   };
 
@@ -137,19 +158,25 @@ export default function Index() {
     const { projectId, fileName, type } = fileOpContext;
     
     try {
+        let finalName = nameDialogValue;
+        
+        // Auto-append .job if missing for jobs
+        if (type === 'job' && !finalName.endsWith('.job')) {
+            finalName += '.job';
+        }
+
         if (nameDialogMode === 'create') {
-            const finalName = nameDialogValue.endsWith('.job') ? nameDialogValue : `${nameDialogValue}.job`;
             await saveFile(projectId, finalName, "", 'job');
             toast.success("Job created");
         } else if (nameDialogMode === 'copy' && fileName) {
-            await copyFile(projectId, fileName, nameDialogValue, type);
+            await copyFile(projectId, fileName, finalName, type);
             toast.success("File duplicated");
         } else if (nameDialogMode === 'rename' && fileName) {
-            await renameFile(projectId, fileName, nameDialogValue, type);
+            await renameFile(projectId, fileName, finalName, type);
             toast.success("File renamed");
-            // If currently selected, update selection
+            // Update selection if we renamed the selected file
             if (selection?.kind === 'source' && selection.name === fileName) {
-                setSelection({ ...selection, name: nameDialogValue });
+                setSelection({ ...selection, name: finalName });
             }
         }
         await loadData();
@@ -183,7 +210,6 @@ export default function Index() {
      setTimeout(() => setIsRunDialogOpen(true), 50);
   };
 
-  // ... (Keep existing run handlers: handleDeleteRun, executeRun, handleRunRequest, etc.)
   const handleDeleteRun = async (projectId: string, runId: string) => {
     try {
         await deleteRun(projectId, runId);
@@ -366,7 +392,7 @@ export default function Index() {
                    <div className="flex-1 flex gap-4 p-4 overflow-hidden">
                      <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
                        <PropertiesEditor 
-                         title={isReadOnly ? `Run Snapshot: ${selection.fileName}` : `Job Properties: ${selection.name}`}
+                         title={isReadOnly ? `Run Snapshot: ${selection.fileName}` : `Job Properties: ${selection.name.replace(/\.job$/, '')}`}
                          content={getCurrentFileContent()} 
                          onChange={handleContentChange}
                          readOnly={isReadOnly}

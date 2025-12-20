@@ -1,5 +1,5 @@
 import { Project, ProjectRun } from "../../data/mock-fs";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -115,9 +115,9 @@ export function ProjectSidebar({
                {selectedProject.jobs.map(job => (
                  <FileItem
                    key={job.name}
-                   name={job.name}
+                   name={job.name.replace(/\.job$/, '')} // Strip extension for display
                    type="job"
-                   icon={FileText}
+                   icon={FileCog} // Updated Icon
                    iconColor="text-blue-500"
                    isSelected={selection?.kind === 'source' && selection.name === job.name}
                    onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
