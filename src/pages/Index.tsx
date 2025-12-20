@@ -7,7 +7,7 @@ import { RunDialog, RunOptions } from "../components/corb/RunDialog";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile } from "../lib/api";
-import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound } from "lucide-react";
+import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
@@ -234,6 +234,11 @@ export default function Index() {
     setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
   };
 
+  const handleResetEnv = () => {
+    setEnvFiles(prev => ({ ...prev, [environment]: originalEnvFiles[environment] }));
+    toast.info("Environment changes discarded");
+  };
+
   const handleSaveEnv = async () => {
       try {
           await saveFile(null, `${environment}.props`, envFiles[environment], 'env');
@@ -382,6 +387,7 @@ export default function Index() {
                                     title={`Environment: ${environment}.props`}
                                     content={envFiles[environment] || ""}
                                     onChange={handleEnvFileChange}
+                                    originalContent={originalEnvFiles[environment]} // Pass original content
                                 />
                                 {isEnvDirty && (
                                     <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
@@ -392,13 +398,23 @@ export default function Index() {
                                                 <div className="opacity-90">Changes must be saved to take effect.</div>
                                             </div>
                                         </div>
-                                        <Button 
-                                            onClick={() => setIsEnvSaveDialogOpen(true)} 
-                                            size="sm" 
-                                            className="w-full bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
-                                        >
-                                            <Save className="mr-2 h-4 w-4" /> Save Environment
-                                        </Button>
+                                        <div className="flex gap-2">
+                                            <Button 
+                                                onClick={handleResetEnv} 
+                                                size="sm" 
+                                                variant="outline"
+                                                className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
+                                            >
+                                                <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                                            </Button>
+                                            <Button 
+                                                onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                                size="sm" 
+                                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                                            >
+                                                <Save className="mr-2 h-4 w-4" /> Save
+                                            </Button>
+                                        </div>
                                     </div>
                                 )}
                            </div>
