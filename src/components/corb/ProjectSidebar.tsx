@@ -45,6 +45,11 @@ export function ProjectSidebar({
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
+  // Filter scripts into categories
+  const urisScripts = selectedProject?.scripts.filter(s => s.name.startsWith('uris/')) || [];
+  const processorScripts = selectedProject?.scripts.filter(s => s.name.startsWith('processor/')) || [];
+  const otherScripts = selectedProject?.scripts.filter(s => !s.name.startsWith('uris/') && !s.name.startsWith('processor/')) || [];
+
   // PROJECT LIST VIEW
   if (!selectedProject) {
     return (
@@ -128,22 +133,69 @@ export function ProjectSidebar({
                  />
                ))}
 
-               {/* Scripts Header */}
-               <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">SCRIPTS</div>
-               {selectedProject.scripts.map(script => (
-                 <FileItem
-                   key={script.name}
-                   name={script.name}
-                   type="script"
-                   icon={FileCode}
-                   iconColor="text-yellow-500"
-                   isSelected={selection?.kind === 'source' && selection.name === script.name}
-                   onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
-                   onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
-                   onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
-                   onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
-                 />
-               ))}
+               {/* URIS SCRIPTS */}
+               {urisScripts.length > 0 && (
+                 <>
+                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">URIS SCRIPTS</div>
+                   {urisScripts.map(script => (
+                     <FileItem
+                       key={script.name}
+                       name={script.name.replace('uris/', '')} // Clean name for display
+                       type="script"
+                       icon={FileCode}
+                       iconColor="text-purple-500"
+                       isSelected={selection?.kind === 'source' && selection.name === script.name}
+                       onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
+                       onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
+                       onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
+                       onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
+                     />
+                   ))}
+                 </>
+               )}
+
+               {/* PROCESSOR SCRIPTS */}
+               {processorScripts.length > 0 && (
+                 <>
+                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">PROCESSOR SCRIPTS</div>
+                   {processorScripts.map(script => (
+                     <FileItem
+                       key={script.name}
+                       name={script.name.replace('processor/', '')} // Clean name for display
+                       type="script"
+                       icon={FileCode}
+                       iconColor="text-pink-500"
+                       isSelected={selection?.kind === 'source' && selection.name === script.name}
+                       onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
+                       onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
+                       onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
+                       onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
+                     />
+                   ))}
+                 </>
+               )}
+
+               {/* OTHER SCRIPTS */}
+               {otherScripts.length > 0 && (
+                 <>
+                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">SCRIPTS</div>
+                   {otherScripts.map(script => (
+                     <FileItem
+                       key={script.name}
+                       name={script.name}
+                       type="script"
+                       icon={FileCode}
+                       iconColor="text-yellow-500"
+                       isSelected={selection?.kind === 'source' && selection.name === script.name}
+                       onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
+                       onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
+                       onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
+                       onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
+                     />
+                   ))}
+                 </>
+               )}
+
             </AccordionContent>
           </AccordionItem>
 

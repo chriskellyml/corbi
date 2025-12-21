@@ -67,6 +67,42 @@ const safePath = (base: string, sub: string) => {
   return resolved;
 };
 
+// Helper to recursively read scripts
+async function getScriptsRecursively(dir: string, baseDir: string): Promise<any[]> {
+    let results: any[] = [];
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            results = results.concat(await getScriptsRecursively(fullPath, baseDir));
+        } else if (entry.isFile() && /\.(xqy|js|sjs)$/.test(entry.name)) {
+            // Use forward slashes for consistency across platforms
+            const relativeName = path.relative(baseDir, fullPath).split(path.sep).join('/');
+            results.push({
+                name: relativeName,
+                type: 'script',
+                content: await fs.readFile(fullPath, 'utf-8')
+            });
+        }
+    }
+    return results;
+}
+
+// Helper to recursively copy directory
+async function copyDir(src: string, dest: string) {
+    await fs.mkdir(dest, { recursive: true });
+    const entries = await fs.readdir(src, { withFileTypes: true });
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+            await copyDir(srcPath, destPath);
+        } else {
+            await fs.copyFile(srcPath, destPath);
+        }
+    }
+}
+
 // GET /api/projects
 app.get('/api/projects', async (req, res) => {
   try {
@@ -88,18 +124,11 @@ app.get('/api/projects', async (req, res) => {
         content: await fs.readFile(path.join(pPath, name), 'utf-8')
       })));
 
-      // Get Scripts
+      // Get Scripts (Recursive)
       const scriptsDir = path.join(pPath, 'scripts');
       let scripts = [];
       if (existsSync(scriptsDir)) {
-         const scriptFiles = (await fs.readdir(scriptsDir))
-            .filter(f => f.endsWith('.xqy') || f.endsWith('.js') || f.endsWith('.sjs'));
-         
-         scripts = await Promise.all(scriptFiles.map(async name => ({
-           name,
-           type: 'script',
-           content: await fs.readFile(path.join(scriptsDir, name), 'utf-8')
-         })));
+         scripts = await getScriptsRecursively(scriptsDir, scriptsDir);
       }
 
       // Get Runs
@@ -131,13 +160,13 @@ app.get('/api/projects', async (req, res) => {
               }
 
               // Scripts (snapshot)
+              // Currently reading flat structure for logs, but could be recursive if we wanted full fidelity
+              // For simplicity, we assume snapshots are flat or we read recursively if needed.
+              // Let's read recursively to match source structure
               const runScriptsDir = path.join(rPath, 'scripts');
-              const runScripts = [];
+              let runScripts = [];
               if (existsSync(runScriptsDir)) {
-                  const rsFiles = await fs.readdir(runScriptsDir);
-                  for (const rs of rsFiles) {
-                      runScripts.push({ name: rs, content: await fs.readFile(path.join(runScriptsDir, rs), 'utf-8') });
-                  }
+                  runScripts = await getScriptsRecursively(runScriptsDir, runScriptsDir);
               }
 
               return {
@@ -230,6 +259,8 @@ app.post('/api/save', async (req, res) => {
             targetPath = safePath(path.join(PROJECTS_DIR, projectId), fileName);
         } else if (type === 'script') {
             targetPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), fileName);
+            // Ensure dir exists for nested scripts
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
         } else {
             return res.status(400).json({ error: 'Invalid type' });
         }
@@ -252,6 +283,8 @@ app.post('/api/files/copy', async (req, res) => {
         } else if (type === 'script') {
             sourcePath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), sourceName);
             targetPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), targetName);
+            // Ensure dir exists
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
         } else {
             return res.status(400).json({ error: 'Invalid type' });
         }
@@ -276,6 +309,8 @@ app.post('/api/files/rename', async (req, res) => {
         } else if (type === 'script') {
             oldPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), oldName);
             newPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), newName);
+            // Ensure dir exists
+            await fs.mkdir(path.dirname(newPath), { recursive: true });
         } else {
             return res.status(400).json({ error: 'Invalid type' });
         }
@@ -343,10 +378,6 @@ app.post('/api/run', async (req, res) => {
         // B. Job Overrides (handle options modifications here)
         optionsContent += `\n# --- Job: ${jobName} ---\n`;
         
-        // Handle URIS-MODULE / URIS-FILE overrides logic
-        // If URIS_MODULE_MODE is file, we strip URIS-MODULE from jobContent and add URIS-FILE
-        // If URIS_MODULE_MODE is custom, we strip URIS-MODULE from jobContent and add custom one
-        
         const lines = jobContent.split('\n');
         for (const line of lines) {
             const trimmed = line.trim();
@@ -396,13 +427,7 @@ app.post('/api/run', async (req, res) => {
         const scriptsSrc = path.join(PROJECTS_DIR, projectId, 'scripts');
         const scriptsDst = path.join(runDir, 'scripts');
         if (existsSync(scriptsSrc)) {
-            await fs.mkdir(scriptsDst);
-            const scriptFiles = await fs.readdir(scriptsSrc);
-            for (const f of scriptFiles) {
-                if (f.endsWith('.xqy') || f.endsWith('.js') || f.endsWith('.sjs')) {
-                    await fs.copyFile(path.join(scriptsSrc, f), path.join(scriptsDst, f));
-                }
-            }
+            await copyDir(scriptsSrc, scriptsDst);
         }
 
         // 5. Create placeholder logs
