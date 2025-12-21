@@ -14,15 +14,15 @@ export async function fetchEnvFiles(): Promise<Record<string, string>> {
   return res.json();
 }
 
-export async function fetchSupportCollectors(): Promise<string[]> {
-    const res = await fetch(`${API_BASE}/support/collectors`);
-    if (!res.ok) throw new Error("Failed to fetch support collectors");
+export async function fetchSupportUris(): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/support/uris`);
+    if (!res.ok) throw new Error("Failed to fetch support uris");
     return res.json();
 }
 
-export async function fetchSupportProcessors(): Promise<string[]> {
-    const res = await fetch(`${API_BASE}/support/processors`);
-    if (!res.ok) throw new Error("Failed to fetch support processors");
+export async function fetchSupportProcess(): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/support/process`);
+    if (!res.ok) throw new Error("Failed to fetch support process scripts");
     return res.json();
 }
 

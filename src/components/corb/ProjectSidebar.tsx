@@ -47,8 +47,8 @@ export function ProjectSidebar({
 
   // Filter scripts into categories
   const urisScripts = selectedProject?.scripts.filter(s => s.name.startsWith('uris/')) || [];
-  const processorScripts = selectedProject?.scripts.filter(s => s.name.startsWith('processor/')) || [];
-  const otherScripts = selectedProject?.scripts.filter(s => !s.name.startsWith('uris/') && !s.name.startsWith('processor/')) || [];
+  const processScripts = selectedProject?.scripts.filter(s => s.name.startsWith('process/')) || [];
+  const otherScripts = selectedProject?.scripts.filter(s => !s.name.startsWith('uris/') && !s.name.startsWith('process/')) || [];
 
   // PROJECT LIST VIEW
   if (!selectedProject) {
@@ -155,13 +155,13 @@ export function ProjectSidebar({
                )}
 
                {/* PROCESSOR SCRIPTS */}
-               {processorScripts.length > 0 && (
+               {processScripts.length > 0 && (
                  <>
-                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">PROCESSOR SCRIPTS</div>
-                   {processorScripts.map(script => (
+                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">PROCESS SCRIPTS</div>
+                   {processScripts.map(script => (
                      <FileItem
                        key={script.name}
-                       name={script.name.replace('processor/', '')} // Clean name for display
+                       name={script.name.replace('process/', '')} // Clean name for display
                        type="script"
                        icon={FileCode}
                        iconColor="text-pink-500"

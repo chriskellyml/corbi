@@ -18,8 +18,8 @@ const PROJECTS_DIR = path.join(WORKING_DIR, 'projects');
 const ENV_DIR = path.join(WORKING_DIR, 'env');
 const RUNS_DIR = path.join(WORKING_DIR, 'runs');
 const SUPPORT_DIR = path.join(WORKING_DIR, 'support');
-const COLLECTORS_DIR = path.join(SUPPORT_DIR, 'collectors');
-const PROCESSORS_DIR = path.join(SUPPORT_DIR, 'processors');
+const URIS_DIR = path.join(SUPPORT_DIR, 'uris');
+const PROCESS_DIR = path.join(SUPPORT_DIR, 'process');
 const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
 
 // Ensure working directory exists
@@ -35,20 +35,20 @@ if (!existsSync(WORKING_DIR)) {
   }
 }
 
-// Ensure support/collectors exists with a dummy file if needed
-if (!existsSync(COLLECTORS_DIR)) {
+// Ensure support/uris exists with a dummy file if needed
+if (!existsSync(URIS_DIR)) {
     try {
-        mkdirSync(COLLECTORS_DIR, { recursive: true });
-        fs.writeFile(path.join(COLLECTORS_DIR, 'example-collector.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Collector :)\ncts:uris((),(),cts:and-query(()))');
-    } catch(e) { console.error("Failed to create collectors dir", e); }
+        mkdirSync(URIS_DIR, { recursive: true });
+        fs.writeFile(path.join(URIS_DIR, 'example-collector.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Collector :)\ncts:uris((),(),cts:and-query(()))');
+    } catch(e) { console.error("Failed to create uris dir", e); }
 }
 
-// Ensure support/processors exists with a dummy file if needed
-if (!existsSync(PROCESSORS_DIR)) {
+// Ensure support/process exists with a dummy file if needed
+if (!existsSync(PROCESS_DIR)) {
     try {
-        mkdirSync(PROCESSORS_DIR, { recursive: true });
-        fs.writeFile(path.join(PROCESSORS_DIR, 'example-processor.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Processor :)\ndeclare variable $URI as xs:string external;\nxdmp:log($URI)');
-    } catch(e) { console.error("Failed to create processors dir", e); }
+        mkdirSync(PROCESS_DIR, { recursive: true });
+        fs.writeFile(path.join(PROCESS_DIR, 'example-process.xqy'), 'xquery version "1.0-ml";\n(: Example Custom Processor :)\ndeclare variable $URI as xs:string external;\nxdmp:log($URI)');
+    } catch(e) { console.error("Failed to create process dir", e); }
 }
 
 // Ensure uploads dir
@@ -218,22 +218,22 @@ app.get('/api/envs', async (req, res) => {
     }
 });
 
-// GET /api/support/collectors
-app.get('/api/support/collectors', async (req, res) => {
+// GET /api/support/uris
+app.get('/api/support/uris', async (req, res) => {
     try {
-        if (!existsSync(COLLECTORS_DIR)) return res.json([]);
-        const files = await fs.readdir(COLLECTORS_DIR);
+        if (!existsSync(URIS_DIR)) return res.json([]);
+        const files = await fs.readdir(URIS_DIR);
         res.json(files.filter(f => !f.startsWith('.')));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
 
-// GET /api/support/processors
-app.get('/api/support/processors', async (req, res) => {
+// GET /api/support/process
+app.get('/api/support/process', async (req, res) => {
     try {
-        if (!existsSync(PROCESSORS_DIR)) return res.json([]);
-        const files = await fs.readdir(PROCESSORS_DIR);
+        if (!existsSync(PROCESS_DIR)) return res.json([]);
+        const files = await fs.readdir(PROCESS_DIR);
         res.json(files.filter(f => !f.startsWith('.')));
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -401,12 +401,12 @@ app.post('/api/run', async (req, res) => {
         if (options.urisMode === 'file' && options.urisFile) {
             optionsContent += `URIS-FILE=${options.urisFile}\n`;
         } else if (options.urisMode === 'custom' && options.customUrisModule) {
-            optionsContent += `URIS-MODULE=${path.join(COLLECTORS_DIR, options.customUrisModule)}\n`;
+            optionsContent += `URIS-MODULE=${path.join(URIS_DIR, options.customUrisModule)}\n`;
         }
 
         if (options.processMode === 'custom' && options.customProcessModule) {
-             // Updated to use PROCESSORS_DIR
-             optionsContent += `PROCESS-MODULE=${path.join(PROCESSORS_DIR, options.customProcessModule)}\n`;
+             // Updated to use PROCESS_DIR
+             optionsContent += `PROCESS-MODULE=${path.join(PROCESS_DIR, options.customProcessModule)}\n`;
         }
 
         // C. Runtime Settings
