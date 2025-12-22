@@ -75,7 +75,7 @@ async function getScriptsRecursively(dir: string, baseDir: string): Promise<any[
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
             results = results.concat(await getScriptsRecursively(fullPath, baseDir));
-        } else if (entry.isFile() && /\.(xqy|js|sjs)$/.test(entry.name)) {
+        } else if (entry.isFile() && /\.(xqy|js|sjs|txt)$/.test(entry.name)) {
             // Use forward slashes for consistency across platforms
             const relativeName = path.relative(baseDir, fullPath).split(path.sep).join('/');
             results.push({
@@ -160,9 +160,6 @@ app.get('/api/projects', async (req, res) => {
               }
 
               // Scripts (snapshot)
-              // Currently reading flat structure for logs, but could be recursive if we wanted full fidelity
-              // For simplicity, we assume snapshots are flat or we read recursively if needed.
-              // Let's read recursively to match source structure
               const runScriptsDir = path.join(rPath, 'scripts');
               let runScripts = [];
               if (existsSync(runScriptsDir)) {
@@ -240,6 +237,25 @@ app.get('/api/support/process', async (req, res) => {
     }
 });
 
+// GET /api/support/:type/:filename
+app.get('/api/support-content/:type/:filename', async (req, res) => {
+    try {
+        const { type, filename } = req.params;
+        let baseDir;
+        if (type === 'uris') baseDir = URIS_DIR;
+        else if (type === 'process') baseDir = PROCESS_DIR;
+        else return res.status(400).json({ error: 'Invalid type' });
+
+        const filePath = safePath(baseDir, filename);
+        if (!existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+        
+        const content = await fs.readFile(filePath, 'utf-8');
+        res.json({ content });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // POST /api/upload
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -249,7 +265,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // POST /api/save
 app.post('/api/save', async (req, res) => {
     const { projectId, fileName, content, type } = req.body;
-    // Type: 'job', 'script', 'env' 
+    // Type: 'job', 'script', 'env', 'support-uris', 'support-process'
     
     try {
         let targetPath;
@@ -261,6 +277,10 @@ app.post('/api/save', async (req, res) => {
             targetPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), fileName);
             // Ensure dir exists for nested scripts
             await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        } else if (type === 'support-uris') {
+            targetPath = safePath(URIS_DIR, fileName);
+        } else if (type === 'support-process') {
+            targetPath = safePath(PROCESS_DIR, fileName);
         } else {
             return res.status(400).json({ error: 'Invalid type' });
         }

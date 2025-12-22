@@ -26,6 +26,13 @@ export async function fetchSupportProcess(): Promise<string[]> {
     return res.json();
 }
 
+export async function fetchSupportContent(type: 'uris' | 'process', filename: string): Promise<string> {
+    const res = await fetch(`${API_BASE}/support-content/${type}/${filename}`);
+    if (!res.ok) throw new Error("Failed to fetch support content");
+    const data = await res.json();
+    return data.content;
+}
+
 export async function uploadFile(file: File): Promise<{ path: string, filename: string }> {
     const formData = new FormData();
     formData.append('file', file);
@@ -43,7 +50,7 @@ export async function saveFile(
   projectId: string | null, 
   fileName: string, 
   content: string, 
-  type: 'job' | 'script' | 'env'
+  type: 'job' | 'script' | 'env' | 'support-uris' | 'support-process'
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/save`, {
     method: 'POST',

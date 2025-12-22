@@ -3,6 +3,7 @@ import { TopBar } from "../components/corb/TopBar";
 import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar";
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
+import { JobEditor } from "../components/corb/JobEditor";
 import { RunDialog, RunOptions } from "../components/corb/RunDialog";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun } from "../types";
@@ -388,22 +389,17 @@ export default function Index() {
           <div className="flex-1 flex flex-col min-w-0 bg-muted/10">
             {selection ? (
               <div className="flex-1 flex flex-col overflow-hidden">
-                {(isJob || isRunOptions) && (
+                {isJob && (
                    <div className="flex-1 flex gap-4 p-4 overflow-hidden">
                      <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                       <PropertiesEditor 
-                         title={isReadOnly ? `Run Snapshot: ${selection.fileName}` : `Job Properties: ${selection.name.replace(/\.job$/, '')}`}
-                         content={getCurrentFileContent()} 
+                       {/* NEW JOB EDITOR WITH TABS */}
+                       <JobEditor 
+                         jobName={selection.name}
+                         content={getCurrentFileContent()}
                          onChange={handleContentChange}
-                         readOnly={isReadOnly}
+                         project={selectedProject}
+                         onRunJob={() => setIsRunDialogOpen(true)}
                        />
-                       {!isReadOnly && (
-                         <div className="p-4 border-t bg-muted/20">
-                            <Button className="w-full" onClick={() => setIsRunDialogOpen(true)}>
-                              <Play className="mr-2 h-4 w-4" /> Configure & Run Job
-                            </Button>
-                         </div>
-                       )}
                      </div>
 
                      {!isReadOnly && (
@@ -413,7 +409,7 @@ export default function Index() {
                                     title={`Environment: ${environment}.props`}
                                     content={envFiles[environment] || ""}
                                     onChange={handleEnvFileChange}
-                                    originalContent={originalEnvFiles[environment]} // Pass original content
+                                    originalContent={originalEnvFiles[environment]}
                                 />
                                 {isEnvDirty && (
                                     <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
@@ -486,6 +482,21 @@ export default function Index() {
                      )}
                    </div>
                 )}
+                
+                {/* Fallback for Run Options (Read Only) */}
+                {isRunOptions && (
+                    <div className="flex-1 flex gap-4 p-4 overflow-hidden">
+                        <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
+                            <PropertiesEditor 
+                                title={`Run Snapshot: ${selection.fileName}`}
+                                content={getCurrentFileContent()} 
+                                onChange={() => {}}
+                                readOnly={true}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {isScript && (
                    <div className="flex-1 border-l border-border relative">
                      <ScriptEditor 
