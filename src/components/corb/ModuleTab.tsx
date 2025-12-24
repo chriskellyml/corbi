@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Project } from "../../types";
 import { fetchSupportUris, fetchSupportProcess, fetchSupportContent, saveFile } from "../../lib/api";
 import { ScriptEditor } from "./ScriptEditor";
@@ -27,22 +27,18 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
     const [isLoading, setIsLoading] = useState(false);
     const [isSaveAlertOpen, setIsSaveAlertOpen] = useState(false);
 
-    // Filter project scripts based on convention
-    // Convention: URIS scripts are in scripts/uris/, PROCESS in scripts/process/
-    // But we should also allow picking any script from project if needed?
-    // The requirement says "choose a script from this project scripts/uris/*"
+    // Filter project scripts
     const projectScripts = project.scripts.filter(s => {
         if (type === 'uris') return s.name.startsWith('uris/');
         if (type === 'process') return s.name.startsWith('process/');
         return false;
-    }).filter(s => type === 'uris' ? true : !s.name.endsWith('.txt')); // Only allow .txt for URIS per req
+    }).filter(s => type === 'uris' ? true : !s.name.endsWith('.txt'));
 
     const txtFiles = type === 'uris' 
         ? project.scripts.filter(s => s.name.startsWith('uris/') && s.name.endsWith('.txt')) 
         : [];
 
     useEffect(() => {
-        // Determine initial source type from currentValue
         if (!currentValue) {
             setSourceType('project');
         } else if (currentValue.startsWith('scripts/')) {
@@ -52,13 +48,11 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
              setSourceType('support');
         }
 
-        // Load support files list
         if (type === 'uris') fetchSupportUris().then(setSupportFiles);
         else fetchSupportProcess().then(setSupportFiles);
 
     }, [type, currentValue]);
 
-    // Fetch content when currentValue or sourceType changes
     useEffect(() => {
         loadContent();
     }, [currentValue, sourceType, project]);
@@ -67,9 +61,6 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
         setIsLoading(true);
         try {
             if (sourceType === 'project' || sourceType === 'txt') {
-                 // Clean path from scripts/ prefix for matching if needed, 
-                 // but mock-fs uses "uris/file.xqy" format for names inside scripts array
-                 // while currentValue might be "scripts/uris/file.xqy"
                  const nameToFind = currentValue.replace(/^scripts\//, '');
                  const script = project.scripts.find(s => s.name === nameToFind);
                  if (script) {
@@ -79,9 +70,7 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
                      setContent(""); 
                  }
             } else {
-                 // Support
                  if (currentValue && !currentValue.startsWith('scripts/')) {
-                     // Assume currentValue is the filename in support dir
                      const filename = currentValue.split('/').pop() || currentValue;
                      const text = await fetchSupportContent(type, filename);
                      setContent(text);
@@ -100,38 +89,19 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
 
     const handleSourceTypeChange = (val: SourceType) => {
         setSourceType(val);
-        // Reset selection when switching types
         if (val === 'project') {
              const first = projectScripts[0];
-             if (first) onChange(`scripts/${first.name}`);
-             else onChange("");
+             onChange(first ? `scripts/${first.name}` : "");
         } else if (val === 'txt') {
              const first = txtFiles[0];
-             if (first) onChange(`scripts/${first.name}`);
-             else onChange("");
+             onChange(first ? `scripts/${first.name}` : "");
         } else {
              const first = supportFiles[0];
-             if (first) onChange(first); // Store just filename or we need full path? 
-             // Based on server implementation for run, we probably store just the filename or we need to update run logic.
-             // Actually, the previous implementation of RunDialog used customUrisModule which was just a filename.
-             // If we write it to .job file, we might need to handle it in server run logic.
-             // Let's store just the filename for support and rely on convention or updated server logic?
-             // Actually, server `api/run` logic: if `options.customUrisModule` is set, it overrides `URIS-MODULE`.
-             // But here we are editing the `URIS-MODULE` property itself.
-             // If I put "my-collector.xqy" (support file) into `URIS-MODULE`, does CORB know where to find it?
-             // Usually CORB expects a class path or file path.
-             // If we use support files, we probably need to reference them by absolute path in the job file 
-             // OR copy them to the run directory.
-             // Given the constraints, let's assume we store the filename, and the `api/run` logic needs to be smart enough 
-             // to look in support dir if it's not starting with scripts/? 
-             // OR better: let's store `support/uris/filename`.
-             if (first) onChange(`support/${type}/${first}`);
-             else onChange("");
+             onChange(first ? `support/${type}/${first}` : "");
         }
     };
 
     const handleFileSelect = (val: string) => {
-        // val is the name relative to category
         if (sourceType === 'project' || sourceType === 'txt') {
             onChange(`scripts/${val}`);
         } else {
@@ -139,7 +109,6 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
         }
     };
 
-    // Helper to extract clean name for Select
     const getCleanSelection = () => {
         if (!currentValue) return "";
         if (sourceType === 'project' || sourceType === 'txt') {
@@ -160,11 +129,8 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
         try {
             const fileName = getCleanSelection();
             if (sourceType === 'project' || sourceType === 'txt') {
-                // Save to project
-                // Note: saveFile expects fileName relative to project scripts dir if type is 'script'
                 await saveFile(project.id, fileName, content, 'script');
             } else {
-                // Save to support
                 const supportType = type === 'uris' ? 'support-uris' : 'support-process';
                 await saveFile(null, fileName, content, supportType);
             }
@@ -179,54 +145,54 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
     const isDirty = content !== originalContent;
 
     return (
-        <div className="flex flex-col h-full">
-            <div className="bg-muted/10 border-b p-4 space-y-4">
+        <div className="flex flex-col h-full w-full bg-background">
+            <div className="bg-muted/10 border-b p-4 space-y-4 shrink-0">
                 <RadioGroup value={sourceType} onValueChange={(v: any) => handleSourceTypeChange(v)} className="flex gap-6">
                     <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="project" id="r-project" />
-                        <Label htmlFor="r-project">Project Script</Label>
+                        <RadioGroupItem value="project" id={`r-project-${type}`} />
+                        <Label htmlFor={`r-project-${type}`} className="text-xs font-medium cursor-pointer">Project Script</Label>
                     </div>
                     {type === 'uris' && (
                         <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="txt" id="r-txt" />
-                            <Label htmlFor="r-txt">URI List (.txt)</Label>
+                            <RadioGroupItem value="txt" id={`r-txt-${type}`} />
+                            <Label htmlFor={`r-txt-${type}`} className="text-xs font-medium cursor-pointer">URI List (.txt)</Label>
                         </div>
                     )}
                     <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="support" id="r-support" />
-                        <Label htmlFor="r-support">Support Script</Label>
+                        <RadioGroupItem value="support" id={`r-support-${type}`} />
+                        <Label htmlFor={`r-support-${type}`} className="text-xs font-medium cursor-pointer">Support Script</Label>
                     </div>
                 </RadioGroup>
 
                 <div className="flex gap-2">
                     <div className="flex-1">
                         <Select value={getCleanSelection()} onValueChange={handleFileSelect}>
-                            <SelectTrigger className="w-full bg-background">
+                            <SelectTrigger className="w-full h-8 text-xs bg-background">
                                 <SelectValue placeholder="Select file..." />
                             </SelectTrigger>
                             <SelectContent>
                                 {sourceType === 'project' && projectScripts.map(s => (
-                                    <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>
+                                    <SelectItem key={s.name} value={s.name} className="text-xs">{s.name}</SelectItem>
                                 ))}
                                 {sourceType === 'txt' && txtFiles.map(s => (
-                                    <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>
+                                    <SelectItem key={s.name} value={s.name} className="text-xs">{s.name}</SelectItem>
                                 ))}
                                 {sourceType === 'support' && supportFiles.map(s => (
-                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
                     {isDirty && (
-                        <Button onClick={handleSave} className="gap-2" variant={sourceType === 'support' ? "destructive" : "default"}>
-                            <Save className="h-4 w-4" />
-                            Save {sourceType === 'support' && "Global"} Changes
+                        <Button onClick={handleSave} size="sm" className="h-8 gap-2 text-xs" variant={sourceType === 'support' ? "destructive" : "default"}>
+                            <Save className="h-3 w-3" />
+                            Save
                         </Button>
                     )}
                 </div>
             </div>
 
-            <div className="flex-1 overflow-hidden relative border-t border-border">
+            <div className="flex-1 overflow-hidden relative">
                 {isLoading ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                         <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
