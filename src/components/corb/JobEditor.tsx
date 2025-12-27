@@ -3,6 +3,8 @@ import { PropertiesEditor } from "./PropertiesEditor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { ModuleTab } from "./ModuleTab";
 import { Project } from "../../types";
+import { Button } from "../../components/ui/button";
+import { Play } from "lucide-react";
 
 interface JobEditorProps {
     jobName: string;
@@ -54,34 +56,21 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
 
     return (
         <div className="flex flex-col h-full bg-background">
-             <div className="px-4 py-2 border-b border-border bg-muted/10 flex justify-between items-center">
+             <div className="px-4 py-2 border-b border-border bg-muted/10 flex justify-between items-center shrink-0">
                 <h3 className="font-semibold text-sm">Job: {jobName.replace(/\.job$/, '')}</h3>
+                <Button size="sm" onClick={onRunJob} className="h-7 text-xs gap-1">
+                    <Play className="h-3 w-3" /> Run
+                </Button>
             </div>
-            <Tabs defaultValue="properties" className="flex-1 flex flex-col overflow-hidden">
-                <div className="px-4 pt-2">
+            <Tabs defaultValue="URIS" className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-4 pt-2 shrink-0">
                     <TabsList className="w-full justify-start">
-                        <TabsTrigger value="properties">Properties</TabsTrigger>
-                        <TabsTrigger value="uris">URIS</TabsTrigger>
-                        <TabsTrigger value="process">Process</TabsTrigger>
+                        <TabsTrigger value="URIS">URIS</TabsTrigger>
+                        <TabsTrigger value="PROCESS">PROCESS</TabsTrigger>
                     </TabsList>
                 </div>
 
-                <TabsContent value="properties" className="flex-1 flex flex-col overflow-hidden mt-0 border-t border-border/50">
-                    <PropertiesEditor 
-                        content={content}
-                        onChange={onChange}
-                    />
-                    <div className="p-4 border-t bg-muted/20">
-                         <button 
-                            className="w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-                            onClick={onRunJob}
-                         >
-                            Configure & Run Job
-                        </button>
-                    </div>
-                </TabsContent>
-
-                <TabsContent value="uris" className="flex-1 overflow-hidden mt-0 border-t border-border/50">
+                <TabsContent value="URIS" className="flex-1 flex flex-col overflow-hidden mt-0 border-t border-border/50 h-full">
                     <ModuleTab 
                         type="uris"
                         currentValue={getProperty('URIS-MODULE') || getProperty('URIS_MODULE')}
@@ -90,7 +79,7 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
                     />
                 </TabsContent>
 
-                <TabsContent value="process" className="flex-1 overflow-hidden mt-0 border-t border-border/50">
+                <TabsContent value="PROCESS" className="flex-1 flex flex-col overflow-hidden mt-0 border-t border-border/50 h-full">
                      <ModuleTab 
                         type="process"
                         currentValue={getProperty('PROCESS-MODULE') || getProperty('PROCESS_MODULE')}
