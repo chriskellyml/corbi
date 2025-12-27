@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { PropertiesEditor } from "./PropertiesEditor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { ModuleTab } from "./ModuleTab";
 import { Project } from "../../types";
@@ -62,7 +61,7 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
                     <Play className="h-3 w-3" /> Run
                 </Button>
             </div>
-            <Tabs defaultValue="URIS" className="flex-1 flex flex-col overflow-hidden">
+            <Tabs defaultValue="URIS" className="flex-1 flex flex-col min-h-0">
                 <div className="px-4 pt-2 shrink-0">
                     <TabsList className="w-full justify-start">
                         <TabsTrigger value="URIS">URIS</TabsTrigger>
@@ -70,7 +69,7 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
                     </TabsList>
                 </div>
 
-                <TabsContent value="URIS" className="flex-1 flex flex-col overflow-hidden mt-0 border-t border-border/50 h-full">
+                <TabsContent value="URIS" className="flex-1 flex flex-col min-h-0 mt-0 border-t border-border/50 data-[state=inactive]:hidden">
                     <ModuleTab 
                         type="uris"
                         currentValue={getProperty('URIS-MODULE') || getProperty('URIS_MODULE')}
@@ -79,7 +78,7 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
                     />
                 </TabsContent>
 
-                <TabsContent value="PROCESS" className="flex-1 flex flex-col overflow-hidden mt-0 border-t border-border/50 h-full">
+                <TabsContent value="PROCESS" className="flex-1 flex flex-col min-h-0 mt-0 border-t border-border/50 data-[state=inactive]:hidden">
                      <ModuleTab 
                         type="process"
                         currentValue={getProperty('PROCESS-MODULE') || getProperty('PROCESS_MODULE')}
