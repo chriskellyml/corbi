@@ -1,5 +1,5 @@
 import { Project, ProjectRun } from "../../data/mock-fs";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -45,10 +45,35 @@ export function ProjectSidebar({
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
-  // Filter scripts into categories
-  const urisScripts = selectedProject?.scripts.filter(s => s.name.startsWith('uris/')) || [];
-  const processScripts = selectedProject?.scripts.filter(s => s.name.startsWith('process/')) || [];
+  // 1. Identify Linked Scripts
+  const linkedScripts = new Set<string>();
+  if (selectedProject) {
+      selectedProject.jobs.forEach(job => {
+          const lines = job.content.split('\n');
+          lines.forEach(line => {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('#') || !trimmed.includes('=')) return;
+              const [key, rawVal] = trimmed.split('=', 2).map(s => s.trim());
+              // Handle optional keys or varying case if needed, strict for now based on previous files
+              if (['URIS-MODULE', 'URIS_MODULE', 'PROCESS-MODULE', 'PROCESS_MODULE', 'URIS-FILE', 'URIS_FILE'].includes(key)) {
+                  // The value in job file typically includes 'scripts/' prefix for project files
+                  // We need to strip it to match script.name which is relative to scripts/
+                  if (rawVal.startsWith('scripts/')) {
+                      linkedScripts.add(rawVal.replace(/^scripts\//, ''));
+                  }
+              }
+          });
+      });
+  }
+
+  // 2. Categorize Scripts
   const otherScripts = selectedProject?.scripts.filter(s => !s.name.startsWith('uris/') && !s.name.startsWith('process/')) || [];
+  
+  const unlinkedScripts = selectedProject?.scripts.filter(s => {
+      const isUrisOrProcess = s.name.startsWith('uris/') || s.name.startsWith('process/');
+      if (!isUrisOrProcess) return false;
+      return !linkedScripts.has(s.name);
+  }) || [];
 
   // PROJECT LIST VIEW
   if (!selectedProject) {
@@ -101,7 +126,7 @@ export function ProjectSidebar({
       <ScrollArea className="flex-1">
         <Accordion type="multiple" defaultValue={["definition", "runs"]} className="w-full">
           
-          {/* DEFINITION SECTION (formerly SOURCE) */}
+          {/* DEFINITION SECTION */}
           <AccordionItem value="definition" className="border-b border-border">
             <AccordionTrigger className="px-4 py-2 hover:no-underline hover:bg-muted/50 text-sm font-semibold uppercase text-muted-foreground">
               <span className="flex items-center gap-2">
@@ -122,7 +147,7 @@ export function ProjectSidebar({
                    key={job.name}
                    name={job.name.replace(/\.job$/, '')} // Strip extension for display
                    type="job"
-                   icon={FileCog} // Updated Icon
+                   icon={FileCog} 
                    iconColor="text-blue-500"
                    isSelected={selection?.kind === 'source' && selection.name === job.name}
                    onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
@@ -133,52 +158,10 @@ export function ProjectSidebar({
                  />
                ))}
 
-               {/* URIS SCRIPTS */}
-               {urisScripts.length > 0 && (
-                 <>
-                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">URIS SCRIPTS</div>
-                   {urisScripts.map(script => (
-                     <FileItem
-                       key={script.name}
-                       name={script.name.replace('uris/', '')} // Clean name for display
-                       type="script"
-                       icon={FileCode}
-                       iconColor="text-purple-500"
-                       isSelected={selection?.kind === 'source' && selection.name === script.name}
-                       onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
-                       onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
-                       onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
-                       onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
-                     />
-                   ))}
-                 </>
-               )}
-
-               {/* PROCESSOR SCRIPTS */}
-               {processScripts.length > 0 && (
-                 <>
-                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">PROCESS SCRIPTS</div>
-                   {processScripts.map(script => (
-                     <FileItem
-                       key={script.name}
-                       name={script.name.replace('process/', '')} // Clean name for display
-                       type="script"
-                       icon={FileCode}
-                       iconColor="text-pink-500"
-                       isSelected={selection?.kind === 'source' && selection.name === script.name}
-                       onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
-                       onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
-                       onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
-                       onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
-                     />
-                   ))}
-                 </>
-               )}
-
-               {/* OTHER SCRIPTS */}
+               {/* OTHER SCRIPTS (Libs, Helpers, etc) */}
                {otherScripts.length > 0 && (
                  <>
-                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">SCRIPTS</div>
+                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1">GENERAL SCRIPTS</div>
                    {otherScripts.map(script => (
                      <FileItem
                        key={script.name}
@@ -191,6 +174,31 @@ export function ProjectSidebar({
                        onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
                        onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
                        onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
+                     />
+                   ))}
+                 </>
+               )}
+
+               {/* UNLINKED SCRIPTS */}
+               {unlinkedScripts.length > 0 && (
+                 <>
+                   <div className="px-4 py-1 text-xs font-semibold text-muted-foreground/70 mt-3 mb-1 flex items-center gap-2">
+                       <Link2Off className="h-3 w-3" />
+                       UNLINKED SCRIPTS
+                   </div>
+                   {unlinkedScripts.map(script => (
+                     <FileItem
+                       key={script.name}
+                       name={script.name}
+                       type="script"
+                       icon={FileCode}
+                       iconColor="text-gray-400"
+                       isSelected={selection?.kind === 'source' && selection.name === script.name}
+                       onClick={() => onSelectFile({ kind: 'source', type: 'script', name: script.name })}
+                       onCopy={() => onCopyFile(selectedProject.id, script.name, 'script')}
+                       onRename={() => onRenameFile(selectedProject.id, script.name, 'script')}
+                       onDelete={() => onDeleteFile(selectedProject.id, script.name, 'script')}
+                       showDeleteButton
                      />
                    ))}
                  </>
@@ -234,7 +242,7 @@ export function ProjectSidebar({
 
 // Helper Components
 
-function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRun, onCopy, onRename, onDelete }: any) {
+function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRun, onCopy, onRename, onDelete, showDeleteButton }: any) {
   return (
     <div
       className={cn(
@@ -247,7 +255,7 @@ function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRu
       <span className="truncate flex-1">{name}</span>
       
       {/* Actions (visible on hover) */}
-      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm">
+      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm pl-2">
           {type === 'job' && (
               <Button 
                 variant="ghost" 
@@ -257,6 +265,18 @@ function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRu
                 title="Run Job"
               >
                   <Play className="h-3 w-3 fill-current" />
+              </Button>
+          )}
+
+          {showDeleteButton && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10" 
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                title="Delete File"
+              >
+                  <Trash2 className="h-3 w-3" />
               </Button>
           )}
           
