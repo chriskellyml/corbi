@@ -11,9 +11,10 @@ interface JobEditorProps {
     onChange: (newContent: string) => void;
     project: Project;
     onRunJob: () => void;
+    onRefreshData?: () => void;
 }
 
-export function JobEditor({ jobName, content, onChange, project, onRunJob }: JobEditorProps) {
+export function JobEditor({ jobName, content, onChange, project, onRunJob, onRefreshData }: JobEditorProps) {
     // Parse key-values to find URIS-MODULE and PROCESS-MODULE
     const getProperty = (key: string) => {
         const lines = content.split('\n');
@@ -75,6 +76,7 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
                         currentValue={getProperty('URIS-MODULE') || getProperty('URIS_MODULE')}
                         onChange={(val) => setProperty('URIS-MODULE', val)}
                         project={project}
+                        onRefreshData={onRefreshData}
                     />
                 </TabsContent>
 
@@ -84,6 +86,7 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob }: Job
                         currentValue={getProperty('PROCESS-MODULE') || getProperty('PROCESS_MODULE')}
                         onChange={(val) => setProperty('PROCESS-MODULE', val)}
                         project={project}
+                        onRefreshData={onRefreshData}
                     />
                 </TabsContent>
             </Tabs>

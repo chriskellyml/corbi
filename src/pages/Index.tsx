@@ -399,6 +399,7 @@ export default function Index() {
                          onChange={handleContentChange}
                          project={selectedProject}
                          onRunJob={() => setIsRunDialogOpen(true)}
+                         onRefreshData={loadData}
                        />
                      </div>
 

@@ -5,21 +5,24 @@ import { ScriptEditor } from "./ScriptEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
+import { Input } from "../../components/ui/input";
 import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group";
-import { AlertTriangle, Save, RefreshCw } from "lucide-react";
+import { AlertTriangle, Save, RefreshCw, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../../components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 
 interface ModuleTabProps {
     type: 'uris' | 'process';
     currentValue: string;
     onChange: (value: string) => void;
     project: Project;
+    onRefreshData?: () => void;
 }
 
 type SourceType = 'project' | 'support' | 'txt';
 
-export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabProps) {
+export function ModuleTab({ type, currentValue, onChange, project, onRefreshData }: ModuleTabProps) {
     const [sourceType, setSourceType] = useState<SourceType>('project');
     const [supportFiles, setSupportFiles] = useState<string[]>([]);
     const [content, setContent] = useState("");
@@ -27,10 +30,11 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
     const [isLoading, setIsLoading] = useState(false);
     const [isSaveAlertOpen, setIsSaveAlertOpen] = useState(false);
 
+    // Create File State
+    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [newFileName, setNewFileName] = useState("");
+
     // Filter project scripts based on convention
-    // Convention: URIS scripts are in scripts/uris/, PROCESS in scripts/process/
-    // But we should also allow picking any script from project if needed?
-    // The requirement says "choose a script from this project scripts/uris/*"
     const projectScripts = project.scripts.filter(s => {
         if (type === 'uris') return s.name.startsWith('uris/');
         if (type === 'process') return s.name.startsWith('process/');
@@ -52,24 +56,34 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
              setSourceType('support');
         }
 
-        // Load support files list
+        loadSupportFiles();
+    }, [type]); // Re-run when type changes
+
+    // Watch currentValue to update source type if changed externally (e.g. initial load)
+    useEffect(() => {
+        if (!currentValue) return;
+        if (currentValue.startsWith('scripts/')) {
+             if (currentValue.endsWith('.txt') && sourceType !== 'txt') setSourceType('txt');
+             else if (!currentValue.endsWith('.txt') && sourceType !== 'project') setSourceType('project');
+        } else {
+             if (sourceType !== 'support') setSourceType('support');
+        }
+    }, [currentValue]);
+
+    const loadSupportFiles = () => {
         if (type === 'uris') fetchSupportUris().then(setSupportFiles);
         else fetchSupportProcess().then(setSupportFiles);
-
-    }, [type, currentValue]);
+    };
 
     // Fetch content when currentValue or sourceType changes
     useEffect(() => {
         loadContent();
-    }, [currentValue, sourceType, project]);
+    }, [currentValue, project]); // Depend on project to refresh content if project reloaded
 
     const loadContent = async () => {
         setIsLoading(true);
         try {
             if (sourceType === 'project' || sourceType === 'txt') {
-                 // Clean path from scripts/ prefix for matching if needed, 
-                 // but mock-fs uses "uris/file.xqy" format for names inside scripts array
-                 // while currentValue might be "scripts/uris/file.xqy"
                  const nameToFind = currentValue.replace(/^scripts\//, '');
                  const script = project.scripts.find(s => s.name === nameToFind);
                  if (script) {
@@ -81,7 +95,6 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
             } else {
                  // Support
                  if (currentValue && !currentValue.startsWith('scripts/')) {
-                     // Assume currentValue is the filename in support dir
                      const filename = currentValue.split('/').pop() || currentValue;
                      const text = await fetchSupportContent(type, filename);
                      setContent(text);
@@ -100,7 +113,7 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
 
     const handleSourceTypeChange = (val: SourceType) => {
         setSourceType(val);
-        // Reset selection when switching types
+        // Reset to first available item or empty when switching tabs
         if (val === 'project') {
              const first = projectScripts[0];
              if (first) onChange(`scripts/${first.name}`);
@@ -111,20 +124,6 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
              else onChange("");
         } else {
              const first = supportFiles[0];
-             if (first) onChange(first); // Store just filename or we need full path? 
-             // Based on server implementation for run, we probably store just the filename or we need to update run logic.
-             // Actually, the previous implementation of RunDialog used customUrisModule which was just a filename.
-             // If we write it to .job file, we might need to handle it in server run logic.
-             // Let's store just the filename for support and rely on convention or updated server logic?
-             // Actually, server `api/run` logic: if `options.customUrisModule` is set, it overrides `URIS-MODULE`.
-             // But here we are editing the `URIS-MODULE` property itself.
-             // If I put "my-collector.xqy" (support file) into `URIS-MODULE`, does CORB know where to find it?
-             // Usually CORB expects a class path or file path.
-             // If we use support files, we probably need to reference them by absolute path in the job file 
-             // OR copy them to the run directory.
-             // Given the constraints, let's assume we store the filename, and the `api/run` logic needs to be smart enough 
-             // to look in support dir if it's not starting with scripts/? 
-             // OR better: let's store `support/uris/filename`.
              if (first) onChange(`support/${type}/${first}`);
              else onChange("");
         }
@@ -139,10 +138,9 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
         }
     };
 
-    // Helper to extract clean name for Select
     const getCleanSelection = () => {
         if (!currentValue) return "";
-        if (sourceType === 'project' || sourceType === 'txt') {
+        if (currentValue.startsWith('scripts/')) {
             return currentValue.replace(/^scripts\//, '');
         }
         return currentValue.replace(`support/${type}/`, '');
@@ -160,19 +158,61 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
         try {
             const fileName = getCleanSelection();
             if (sourceType === 'project' || sourceType === 'txt') {
-                // Save to project
-                // Note: saveFile expects fileName relative to project scripts dir if type is 'script'
                 await saveFile(project.id, fileName, content, 'script');
             } else {
-                // Save to support
                 const supportType = type === 'uris' ? 'support-uris' : 'support-process';
                 await saveFile(null, fileName, content, supportType);
             }
             toast.success("File saved successfully");
             setOriginalContent(content);
             setIsSaveAlertOpen(false);
+            onRefreshData?.(); // Refresh to ensure timestamps/metadata if any are synced
         } catch (e) {
             toast.error("Failed to save file");
+        }
+    };
+
+    const handleCreateNew = async () => {
+        if (!newFileName) return;
+        
+        // Basic validation
+        const lower = newFileName.toLowerCase();
+        
+        if (sourceType === 'txt' && !lower.endsWith('.txt')) {
+            toast.error("File name must end with .txt");
+            return;
+        }
+        if ((sourceType === 'project' || sourceType === 'support') && 
+            !lower.endsWith('.xqy') && !lower.endsWith('.sjs') && !lower.endsWith('.js')) {
+            toast.error("File name must end with .xqy, .sjs, or .js");
+            return;
+        }
+
+        try {
+            let relativePath = newFileName;
+            // For projects, prefix with uris/ or process/ folder
+            if (sourceType === 'project' || sourceType === 'txt') {
+                 relativePath = `${type}/${newFileName}`;
+                 await saveFile(project.id, relativePath, "", 'script');
+                 if (onRefreshData) onRefreshData(); // Refresh project data
+                 
+                 // Select it
+                 onChange(`scripts/${relativePath}`);
+            } else {
+                 // Support
+                 const supportType = type === 'uris' ? 'support-uris' : 'support-process';
+                 await saveFile(null, newFileName, "", supportType);
+                 loadSupportFiles(); // Refresh support list
+                 
+                 // Select it
+                 onChange(`support/${type}/${newFileName}`);
+            }
+            
+            toast.success("File created");
+            setIsCreateDialogOpen(false);
+            setNewFileName("");
+        } catch (e) {
+            toast.error("Failed to create file");
         }
     };
 
@@ -199,7 +239,7 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
                 </RadioGroup>
 
                 <div className="flex gap-2">
-                    <div className="flex-1">
+                    <div className="flex-1 flex gap-2">
                         <Select value={getCleanSelection()} onValueChange={handleFileSelect}>
                             <SelectTrigger className="w-full bg-background">
                                 <SelectValue placeholder="Select file..." />
@@ -216,6 +256,15 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
                                 ))}
                             </SelectContent>
                         </Select>
+                        <Button 
+                            variant="outline" 
+                            size="icon" 
+                            onClick={() => setIsCreateDialogOpen(true)} 
+                            title="Create New File"
+                            className="shrink-0"
+                        >
+                            <Plus className="h-4 w-4" />
+                        </Button>
                     </div>
                     {isDirty && (
                         <Button onClick={handleSave} className="gap-2" variant={sourceType === 'support' ? "destructive" : "default"}>
@@ -239,6 +288,37 @@ export function ModuleTab({ type, currentValue, onChange, project }: ModuleTabPr
                     />
                 )}
             </div>
+
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Create New File</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="space-y-2">
+                            <Label>File Name</Label>
+                            <Input 
+                                value={newFileName} 
+                                onChange={(e) => setNewFileName(e.target.value)} 
+                                placeholder={
+                                    sourceType === 'txt' ? "my-list.txt" : 
+                                    "my-script.xqy"
+                                }
+                                autoFocus
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                {sourceType === 'project' && `Will be created in scripts/${type}/`}
+                                {sourceType === 'txt' && `Will be created in scripts/${type}/`}
+                                {sourceType === 'support' && `Will be created in support/${type}/`}
+                            </p>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={handleCreateNew}>Create</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
              <AlertDialog open={isSaveAlertOpen} onOpenChange={setIsSaveAlertOpen}>
                 <AlertDialogContent>
