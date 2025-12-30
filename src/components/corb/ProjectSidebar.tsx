@@ -1,5 +1,5 @@
 import { Project, ProjectRun } from "../../data/mock-fs";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -27,6 +27,7 @@ interface ProjectSidebarProps {
   onCopyFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
   onRenameFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
   onDeleteFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
+  onMoveFile: (projectId: string, fileName: string, direction: 'up' | 'down', type: 'job'|'script') => void;
 }
 
 export function ProjectSidebar({ 
@@ -40,7 +41,8 @@ export function ProjectSidebar({
   onRunJob,
   onCopyFile,
   onRenameFile,
-  onDeleteFile
+  onDeleteFile,
+  onMoveFile
 }: ProjectSidebarProps) {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -74,6 +76,11 @@ export function ProjectSidebar({
       if (!isUrisOrProcess) return false;
       return !linkedScripts.has(s.name);
   }) || [];
+
+  // Sort jobs for display
+  const sortedJobs = selectedProject 
+    ? [...selectedProject.jobs].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) 
+    : [];
 
   // PROJECT LIST VIEW
   if (!selectedProject) {
@@ -142,10 +149,10 @@ export function ProjectSidebar({
                    </Button>
                </div>
                
-               {selectedProject.jobs.map(job => (
+               {sortedJobs.map((job, index) => (
                  <FileItem
                    key={job.name}
-                   name={job.name.replace(/\.job$/, '')} // Strip extension for display
+                   name={job.name}
                    type="job"
                    icon={FileCog} 
                    iconColor="text-blue-500"
@@ -155,6 +162,8 @@ export function ProjectSidebar({
                    onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
                    onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
                    onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
+                   onMoveUp={index > 0 ? () => onMoveFile(selectedProject.id, job.name, 'up', 'job') : undefined}
+                   onMoveDown={index < sortedJobs.length - 1 ? () => onMoveFile(selectedProject.id, job.name, 'down', 'job') : undefined}
                  />
                ))}
 
@@ -242,7 +251,25 @@ export function ProjectSidebar({
 
 // Helper Components
 
-function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRun, onCopy, onRename, onDelete, showDeleteButton }: any) {
+function FileItem({ 
+    name, 
+    type, 
+    icon: Icon, 
+    iconColor, 
+    isSelected, 
+    onClick, 
+    onRun, 
+    onCopy, 
+    onRename, 
+    onDelete, 
+    showDeleteButton,
+    onMoveUp,
+    onMoveDown 
+}: any) {
+    
+  // Parse numeric prefix for display
+  const displayName = name.replace(/^(\d+)-/, '').replace(/\.(job|xqy|sjs|js|txt)$/, '');
+  
   return (
     <div
       className={cn(
@@ -252,20 +279,46 @@ function FileItem({ name, type, icon: Icon, iconColor, isSelected, onClick, onRu
       onClick={onClick}
     >
       <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
-      <span className="truncate flex-1">{name}</span>
+      <span className="truncate flex-1" title={name}>{displayName}</span>
       
       {/* Actions (visible on hover) */}
       <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm pl-2">
           {type === 'job' && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100" 
-                onClick={(e) => { e.stopPropagation(); onRun(); }}
-                title="Run Job"
-              >
-                  <Play className="h-3 w-3 fill-current" />
-              </Button>
+              <>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100" 
+                    onClick={(e) => { e.stopPropagation(); onRun(); }}
+                    title="Run Job"
+                  >
+                      <Play className="h-3 w-3 fill-current" />
+                  </Button>
+              </>
+          )}
+
+          {/* Ordering Buttons */}
+          {(onMoveUp || onMoveDown) && (
+             <div className="flex flex-col -space-y-1 mr-1">
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={cn("h-3 w-6 hover:bg-primary/10", !onMoveUp && "invisible")}
+                    onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }}
+                    title="Move Up"
+                >
+                    <ChevronUp className="h-2 w-2" />
+                </Button>
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={cn("h-3 w-6 hover:bg-primary/10", !onMoveDown && "invisible")}
+                    onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }}
+                    title="Move Down"
+                >
+                    <ChevronDown className="h-2 w-2" />
+                </Button>
+             </div>
           )}
 
           {showDeleteButton && (

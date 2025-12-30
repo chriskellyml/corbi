@@ -154,6 +154,60 @@ export default function Index() {
     setIsDeleteAlertOpen(true);
   };
 
+  const handleMoveFile = async (projectId: string, fileName: string, direction: 'up' | 'down', type: 'job' | 'script') => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const files = type === 'job' ? project.jobs : project.scripts;
+    // Ensure we work with the current sorted order
+    const sorted = [...files].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const idx = sorted.findIndex(f => f.name === fileName);
+    
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= sorted.length) return;
+    
+    const fileA = sorted[idx];
+    const fileB = sorted[targetIdx];
+    
+    // Parse prefixes
+    const regex = /^(\d+)-(.*)$/;
+    const matchA = fileA.name.match(regex);
+    const matchB = fileB.name.match(regex);
+    
+    if (!matchA || !matchB) {
+        toast.error("Ordering requires both files to have 'NN-' numeric prefixes (e.g., 01-myjob.job).");
+        return;
+    }
+    
+    const prefixA = matchA[1];
+    const bodyA = matchA[2];
+    const prefixB = matchB[1];
+    const bodyB = matchB[2];
+    
+    // Construct new names by swapping prefixes
+    const newNameA = `${prefixB}-${bodyA}`; // A takes B's prefix
+    const newNameB = `${prefixA}-${bodyB}`; // B takes A's prefix
+    
+    // Rename Sequence (A->Temp, B->NewB, Temp->NewA)
+    const tempName = `${Date.now()}-move-temp.tmp`;
+    
+    try {
+        await renameFile(projectId, fileA.name, tempName, type);
+        await renameFile(projectId, fileB.name, newNameB, type);
+        await renameFile(projectId, tempName, newNameA, type);
+        
+        await loadData();
+        
+        // If the moved file was selected, update selection
+        if (selection?.kind === 'source' && selection.name === fileA.name) {
+             setSelection({ ...selection, name: newNameA });
+        }
+    } catch (e: any) {
+        toast.error("Failed to move file: " + e.message);
+    }
+  };
+
   const submitFileOp = async () => {
     if (!fileOpContext || !nameDialogValue) return;
     const { projectId, fileName, type } = fileOpContext;
@@ -383,6 +437,7 @@ export default function Index() {
           onCopyFile={handleCopyFile}
           onRenameFile={handleRenameFile}
           onDeleteFile={handleDeleteFile}
+          onMoveFile={handleMoveFile}
         />
 
         {selectedProject ? (
