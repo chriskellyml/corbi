@@ -108,9 +108,23 @@ export default function Index() {
   };
 
   const handleCreateJob = (projectId: string) => {
+    // Determine next number prefix
+    const project = projects.find(p => p.id === projectId);
+    let nextNum = 1;
+    if (project) {
+        project.jobs.forEach(j => {
+            const match = j.name.match(/^(\d+)-/);
+            if (match) {
+                const n = parseInt(match[1], 10);
+                if (n >= nextNum) nextNum = n + 1;
+            }
+        });
+    }
+    const prefix = String(nextNum).padStart(2, '0');
+
     setFileOpContext({ projectId, type: 'job' });
     setNameDialogMode('create');
-    setNameDialogValue("");
+    setNameDialogValue(`${prefix}-`);
     setIsNameDialogOpen(true);
   };
 
@@ -124,7 +138,6 @@ export default function Index() {
         displayValue = fileName.replace(/\.job$/, '');
         setNameDialogValue(`${displayValue}-copy`);
     } else {
-        // For scripts, maybe keep extension or append -copy before it
         const parts = fileName.split('.');
         if (parts.length > 1) {
             const ext = parts.pop();
@@ -158,12 +171,62 @@ export default function Index() {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
     
-    const files = type === 'job' ? project.jobs : project.scripts;
-    // Ensure we work with the current sorted order
-    const sorted = [...files].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    const idx = sorted.findIndex(f => f.name === fileName);
+    const getFiles = () => type === 'job' ? project.jobs : project.scripts;
+    let files = getFiles();
     
+    // Initial Sort
+    let sorted = [...files].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+    // --- Normalization Logic ---
+    const needsNormalization = sorted.some(f => !/^\d+-/.test(f.name));
+    
+    if (needsNormalization) {
+        const tId = toast.loading("Normalizing file names for ordering...");
+        try {
+            // Rename all files to enforce "01-", "02-" prefix based on current order
+            for (let i = 0; i < sorted.length; i++) {
+                const f = sorted[i];
+                // Strip existing numbers if any to get clean base
+                const cleanName = f.name.replace(/^\d+-/, '');
+                const prefix = String(i + 1).padStart(2, '0');
+                const newName = `${prefix}-${cleanName}`;
+                
+                if (f.name !== newName) {
+                    await renameFile(projectId, f.name, newName, type);
+                }
+            }
+            
+            // Reload data to ensure we have fresh names
+            const [p] = await Promise.all([fetchProjects()]);
+            setProjects(p);
+            
+            // Re-fetch local references
+            const newProject = p.find(pp => pp.id === projectId);
+            if (newProject) {
+                const newFiles = type === 'job' ? newProject.jobs : newProject.scripts;
+                sorted = [...newFiles].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                
+                // We need to update the `fileName` (which was the old name) to the new name 
+                // so we can find the index for swapping.
+                // Strategy: Find by fuzzy suffix match (the "clean name" part).
+                const cleanOriginal = fileName.replace(/^\d+-/, '');
+                const found = sorted.find(f => f.name === cleanOriginal || f.name.endsWith(`-${cleanOriginal}`));
+                if (found) {
+                    fileName = found.name;
+                }
+            }
+            toast.dismiss(tId);
+        } catch (e: any) {
+            toast.dismiss(tId);
+            toast.error("Failed to normalize file names: " + e.message);
+            return;
+        }
+    }
+    
+    // --- Swap Logic ---
+    const idx = sorted.findIndex(f => f.name === fileName);
     if (idx === -1) return;
+    
     const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (targetIdx < 0 || targetIdx >= sorted.length) return;
     
@@ -176,7 +239,7 @@ export default function Index() {
     const matchB = fileB.name.match(regex);
     
     if (!matchA || !matchB) {
-        toast.error("Ordering requires both files to have 'NN-' numeric prefixes (e.g., 01-myjob.job).");
+        toast.error("Ordering error: Files must have numeric prefixes (e.g. 01-name).");
         return;
     }
     
@@ -199,7 +262,7 @@ export default function Index() {
         
         await loadData();
         
-        // If the moved file was selected, update selection
+        // If the moved file was selected, update selection to new name
         if (selection?.kind === 'source' && selection.name === fileA.name) {
              setSelection({ ...selection, name: newNameA });
         }
