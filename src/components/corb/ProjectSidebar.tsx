@@ -268,7 +268,8 @@ function FileItem({
 }: any) {
     
   // Parse numeric prefix for display
-  const displayName = name.replace(/^(\d+)-/, '').replace(/\.(job|xqy|sjs|js|txt)$/, '');
+  // We now show the full name (minus extension) even if it has a prefix
+  const displayName = name.replace(/\.(job|xqy|sjs|js|txt)$/, '');
   
   return (
     <div
