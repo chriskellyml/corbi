@@ -10,11 +10,10 @@ interface JobEditorProps {
     content: string;
     onChange: (newContent: string) => void;
     project: Project;
-    onRunJob: () => void;
     onRefreshData?: () => void;
 }
 
-export function JobEditor({ jobName, content, onChange, project, onRunJob, onRefreshData }: JobEditorProps) {
+export function JobEditor({ jobName, content, onChange, project, onRefreshData }: JobEditorProps) {
     // Parse key-values to find URIS-MODULE and PROCESS-MODULE
     const getProperty = (key: string) => {
         const lines = content.split('\n');
@@ -58,9 +57,6 @@ export function JobEditor({ jobName, content, onChange, project, onRunJob, onRef
         <div className="flex flex-col h-full bg-background">
              <div className="px-4 py-2 border-b border-border bg-muted/10 flex justify-between items-center shrink-0">
                 <h3 className="font-semibold text-sm">Job: {jobName.replace(/\.job$/, '')}</h3>
-                <Button size="sm" onClick={onRunJob} className="h-7 text-xs gap-1">
-                    <Play className="h-3 w-3" /> Run
-                </Button>
             </div>
             <Tabs defaultValue="URIS" className="flex-1 flex flex-col min-h-0">
                 <div className="px-4 pt-2 shrink-0">

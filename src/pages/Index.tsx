@@ -4,7 +4,7 @@ import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
-import { RunDialog, RunOptions } from "../components/corb/RunDialog";
+import { RunFooter, RunOptions } from "../components/corb/RunFooter";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile } from "../lib/api";
@@ -40,7 +40,6 @@ export default function Index() {
   const [loading, setLoading] = useState(true);
 
   // UI State
-  const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
   const [isEnvSaveDialogOpen, setIsEnvSaveDialogOpen] = useState(false);
   
   // File Ops State
@@ -324,8 +323,6 @@ export default function Index() {
      if (selection?.kind !== 'source' || selection.name !== jobName) {
          setSelection({ kind: 'source', type: 'job', name: jobName });
      }
-     // Small delay to ensure state updates
-     setTimeout(() => setIsRunDialogOpen(true), 50);
   };
 
   const handleDeleteRun = async (projectId: string, runId: string) => {
@@ -506,138 +503,145 @@ export default function Index() {
         {selectedProject ? (
           <div className="flex-1 flex flex-col min-w-0 bg-muted/10">
             {selection ? (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {isJob && (
-                   <div className="flex-1 flex gap-4 p-4 overflow-hidden">
-                     <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                       {/* NEW JOB EDITOR WITH TABS */}
-                       <JobEditor 
-                         jobName={selection.name}
-                         content={getCurrentFileContent()}
-                         onChange={handleContentChange}
-                         project={selectedProject}
-                         onRunJob={() => setIsRunDialogOpen(true)}
-                         onRefreshData={loadData}
-                       />
-                     </div>
-
-                     {!isReadOnly && (
-                       <div className="w-1/3 flex flex-col gap-4">
-                           <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                                <PropertiesEditor 
-                                    title={`Environment: ${environment}.props`}
-                                    content={envFiles[environment] || ""}
-                                    onChange={handleEnvFileChange}
-                                    originalContent={originalEnvFiles[environment]}
-                                />
-                                {isEnvDirty && (
-                                    <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
-                                        <div className="text-xs text-amber-800 flex items-start gap-2">
-                                            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                                            <div>
-                                                <div className="font-semibold">Unsaved Changes</div>
-                                                <div className="opacity-90">Changes must be saved to take effect.</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <Button 
-                                                onClick={handleResetEnv} 
-                                                size="sm" 
-                                                variant="outline"
-                                                className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
-                                            >
-                                                <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                                            </Button>
-                                            <Button 
-                                                onClick={() => setIsEnvSaveDialogOpen(true)} 
-                                                size="sm" 
-                                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
-                                            >
-                                                <Save className="mr-2 h-4 w-4" /> Save
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
-                           </div>
-
-                           <div className="border rounded-lg shadow-sm bg-background p-4 shrink-0">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="font-semibold text-sm flex items-center gap-2">
-                                        <KeyRound className="h-4 w-4 text-muted-foreground" />
-                                        Authentication
-                                    </h3>
-                                    <div className={cn(
-                                        "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
-                                        hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
-                                    )}>
-                                        {hasPassword ? "Authorized" : "Unauthorized"}
-                                    </div>
-                                </div>
-                                <div className="text-xs text-muted-foreground mb-3">
-                                    User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
-                                    <br/>
-                                    {hasPassword 
-                                        ? "Password stored in session memory." 
-                                        : "No password currently stored for this session."
-                                    }
-                                </div>
-                                <Button 
-                                    variant={hasPassword ? "outline" : "secondary"} 
-                                    size="sm" 
-                                    className="w-full"
-                                    onClick={() => {
-                                        setPendingRunOptions(null); 
-                                        setIsPasswordDialogOpen(true);
-                                    }}
-                                >
-                                    {hasPassword ? (
-                                        <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
-                                    ) : (
-                                        <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
-                                    )}
-                                </Button>
-                           </div>
-                       </div>
-                     )}
-                   </div>
-                )}
-                
-                {/* Fallback for Run Options (Read Only) */}
-                {isRunOptions && (
+              <div className="flex-1 flex flex-col overflow-hidden relative">
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {isJob && (
                     <div className="flex-1 flex gap-4 p-4 overflow-hidden">
                         <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                            <PropertiesEditor 
-                                title={`Run Snapshot: ${selection.fileName}`}
-                                content={getCurrentFileContent()} 
-                                onChange={() => {}}
-                                readOnly={true}
-                            />
+                        <JobEditor 
+                            jobName={selection.name}
+                            content={getCurrentFileContent()}
+                            onChange={handleContentChange}
+                            project={selectedProject}
+                            onRefreshData={loadData}
+                        />
                         </div>
-                    </div>
-                )}
 
-                {isScript && (
-                   <div className="flex-1 border-l border-border relative">
-                     <ScriptEditor 
-                       fileName={selection.kind === 'source' ? selection.name : selection.fileName} 
-                       content={getCurrentFileContent()} 
-                       onChange={handleContentChange} 
-                       readOnly={isReadOnly}
-                     />
-                   </div>
-                )}
-                {isLogOrCsv && (
-                   <div className="flex-1 flex flex-col bg-background">
-                      <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
-                        <span>{selection.fileName}</span>
-                        <span className="uppercase">{selection.kind} / {selection.category}</span>
-                      </div>
-                      <Textarea 
-                        readOnly 
-                        className="flex-1 resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed" 
-                        value={getCurrentFileContent()} 
-                      />
-                   </div>
+                        {!isReadOnly && (
+                        <div className="w-1/3 flex flex-col gap-4">
+                            <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
+                                    <PropertiesEditor 
+                                        title={`Environment: ${environment}.props`}
+                                        content={envFiles[environment] || ""}
+                                        onChange={handleEnvFileChange}
+                                        originalContent={originalEnvFiles[environment]}
+                                    />
+                                    {isEnvDirty && (
+                                        <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
+                                            <div className="text-xs text-amber-800 flex items-start gap-2">
+                                                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <div className="font-semibold">Unsaved Changes</div>
+                                                    <div className="opacity-90">Changes must be saved to take effect.</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button 
+                                                    onClick={handleResetEnv} 
+                                                    size="sm" 
+                                                    variant="outline"
+                                                    className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
+                                                >
+                                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                                                </Button>
+                                                <Button 
+                                                    onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                                    size="sm" 
+                                                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                                                >
+                                                    <Save className="mr-2 h-4 w-4" /> Save
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                            </div>
+
+                            <div className="border rounded-lg shadow-sm bg-background p-4 shrink-0">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                                            <KeyRound className="h-4 w-4 text-muted-foreground" />
+                                            Authentication
+                                        </h3>
+                                        <div className={cn(
+                                            "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
+                                            hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
+                                        )}>
+                                            {hasPassword ? "Authorized" : "Unauthorized"}
+                                        </div>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mb-3">
+                                        User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
+                                        <br/>
+                                        {hasPassword 
+                                            ? "Password stored in session memory." 
+                                            : "No password currently stored for this session."
+                                        }
+                                    </div>
+                                    <Button 
+                                        variant={hasPassword ? "outline" : "secondary"} 
+                                        size="sm" 
+                                        className="w-full"
+                                        onClick={() => {
+                                            setPendingRunOptions(null); 
+                                            setIsPasswordDialogOpen(true);
+                                        }}
+                                    >
+                                        {hasPassword ? (
+                                            <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
+                                        ) : (
+                                            <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
+                                        )}
+                                    </Button>
+                            </div>
+                        </div>
+                        )}
+                    </div>
+                    )}
+                    
+                    {/* Fallback for Run Options (Read Only) */}
+                    {isRunOptions && (
+                        <div className="flex-1 flex gap-4 p-4 overflow-hidden">
+                            <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
+                                <PropertiesEditor 
+                                    title={`Run Snapshot: ${selection.fileName}`}
+                                    content={getCurrentFileContent()} 
+                                    onChange={() => {}}
+                                    readOnly={true}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {isScript && (
+                    <div className="flex-1 border-l border-border relative">
+                        <ScriptEditor 
+                        fileName={selection.kind === 'source' ? selection.name : selection.fileName} 
+                        content={getCurrentFileContent()} 
+                        onChange={handleContentChange} 
+                        readOnly={isReadOnly}
+                        />
+                    </div>
+                    )}
+                    {isLogOrCsv && (
+                    <div className="flex-1 flex flex-col bg-background">
+                        <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
+                            <span>{selection.fileName}</span>
+                            <span className="uppercase">{selection.kind} / {selection.category}</span>
+                        </div>
+                        <Textarea 
+                            readOnly 
+                            className="flex-1 resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed" 
+                            value={getCurrentFileContent()} 
+                        />
+                    </div>
+                    )}
+                </div>
+
+                {isJob && !isReadOnly && (
+                    <RunFooter 
+                        jobName={selection.name}
+                        onRun={handleRunRequest}
+                    />
                 )}
               </div>
             ) : (
@@ -659,17 +663,6 @@ export default function Index() {
           </div>
         )}
       </div>
-
-      {selectedProject && isRunDialogOpen && (
-        <RunDialog 
-          open={isRunDialogOpen} 
-          onOpenChange={setIsRunDialogOpen}
-          jobName={selection?.kind === 'source' && selection.type === 'job' ? selection.name : (pendingRunJobName || "")}
-          projectName={selectedProject.name}
-          environment={environment}
-          onRun={handleRunRequest}
-        />
-      )}
       
       <PasswordDialog 
         open={isPasswordDialogOpen}
