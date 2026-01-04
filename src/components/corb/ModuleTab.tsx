@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
 import { Input } from "../../components/ui/input";
 import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group";
-import { AlertTriangle, Save, RefreshCw, Plus } from "lucide-react";
+import { AlertTriangle, Save, RefreshCw, Plus, Check } from "lucide-react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../../components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
@@ -29,6 +29,7 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     const [originalContent, setOriginalContent] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isSaveAlertOpen, setIsSaveAlertOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Create File State
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -76,9 +77,10 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     };
 
     // Fetch content when currentValue or sourceType changes
+    // Removed 'project' dependency to prevent overwriting local changes during auto-save cycle
     useEffect(() => {
         loadContent();
-    }, [currentValue, project]); // Depend on project to refresh content if project reloaded
+    }, [currentValue, sourceType]); 
 
     const loadContent = async () => {
         setIsLoading(true);
@@ -111,7 +113,51 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
         }
     };
 
-    const handleSourceTypeChange = (val: SourceType) => {
+    const getCleanSelection = () => {
+        if (!currentValue) return "";
+        if (currentValue.startsWith('scripts/')) {
+            return currentValue.replace(/^scripts\//, '');
+        }
+        return currentValue.replace(`support/${type}/`, '');
+    };
+
+    const isDirty = content !== originalContent;
+
+    // Auto-save Effect for Project Files
+    useEffect(() => {
+        if (sourceType === 'support') return;
+        if (!isDirty) return;
+
+        const timer = setTimeout(async () => {
+            await performAutoSave();
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [content, isDirty, sourceType, currentValue]);
+
+    const performAutoSave = async () => {
+        const fileName = getCleanSelection();
+        if (!fileName) return;
+
+        setIsSaving(true);
+        try {
+            await saveFile(project.id, fileName, content, 'script');
+            setOriginalContent(content);
+            onRefreshData?.();
+        } catch (e) {
+            console.error("Auto-save failed", e);
+            toast.error("Auto-save failed");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSourceTypeChange = async (val: SourceType) => {
+        // Force save if leaving a dirty project file
+        if (isDirty && (sourceType === 'project' || sourceType === 'txt')) {
+             await performAutoSave();
+        }
+
         setSourceType(val);
         // Reset to first available item or empty when switching tabs
         if (val === 'project') {
@@ -129,7 +175,12 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
         }
     };
 
-    const handleFileSelect = (val: string) => {
+    const handleFileSelect = async (val: string) => {
+        // Force save if leaving a dirty project file
+        if (isDirty && (sourceType === 'project' || sourceType === 'txt')) {
+             await performAutoSave();
+        }
+
         // val is the name relative to category
         if (sourceType === 'project' || sourceType === 'txt') {
             onChange(`scripts/${val}`);
@@ -138,24 +189,17 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
         }
     };
 
-    const getCleanSelection = () => {
-        if (!currentValue) return "";
-        if (currentValue.startsWith('scripts/')) {
-            return currentValue.replace(/^scripts\//, '');
-        }
-        return currentValue.replace(`support/${type}/`, '');
-    };
-
-    const handleSave = async () => {
+    const handleManualSave = async () => {
         if (sourceType === 'support') {
             setIsSaveAlertOpen(true);
         } else {
-            await doSave();
+            await doManualSave();
         }
     };
 
-    const doSave = async () => {
+    const doManualSave = async () => {
         try {
+            setIsSaving(true);
             const fileName = getCleanSelection();
             if (sourceType === 'project' || sourceType === 'txt') {
                 await saveFile(project.id, fileName, content, 'script');
@@ -166,9 +210,11 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
             toast.success("File saved successfully");
             setOriginalContent(content);
             setIsSaveAlertOpen(false);
-            onRefreshData?.(); // Refresh to ensure timestamps/metadata if any are synced
+            onRefreshData?.();
         } catch (e) {
             toast.error("Failed to save file");
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -216,8 +262,6 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
         }
     };
 
-    const isDirty = content !== originalContent;
-
     return (
         <div className="flex flex-col h-full">
             <div className="bg-muted/10 border-b p-4 space-y-4">
@@ -238,7 +282,7 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                     </div>
                 </RadioGroup>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                     <div className="flex-1 flex gap-2">
                         <Select value={getCleanSelection()} onValueChange={handleFileSelect}>
                             <SelectTrigger className="w-full bg-background">
@@ -266,10 +310,26 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                             <Plus className="h-4 w-4" />
                         </Button>
                     </div>
-                    {isDirty && (
-                        <Button onClick={handleSave} className="gap-2" variant={sourceType === 'support' ? "destructive" : "default"}>
+                    
+                    {/* Saving Indicator */}
+                    {isSaving && (
+                        <div className="text-xs text-muted-foreground animate-pulse flex items-center gap-1 mr-2">
+                            <RefreshCw className="h-3 w-3 animate-spin" /> Saving...
+                        </div>
+                    )}
+
+                    {/* Auto-save Status Check (visible when clean) */}
+                    {!isDirty && !isSaving && (sourceType === 'project' || sourceType === 'txt') && content.length > 0 && (
+                        <div className="text-xs text-muted-foreground/50 flex items-center gap-1 mr-2" title="All changes saved">
+                             <Check className="h-3 w-3" /> Saved
+                        </div>
+                    )}
+
+                    {/* Manual Save Button - Only for Support Files */}
+                    {isDirty && sourceType === 'support' && (
+                        <Button onClick={handleManualSave} className="gap-2" variant="destructive">
                             <Save className="h-4 w-4" />
-                            Save {sourceType === 'support' && "Global"} Changes
+                            Save Global Changes
                         </Button>
                     )}
                 </div>
@@ -336,7 +396,7 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={doSave} className="bg-destructive hover:bg-destructive/90">
+                        <AlertDialogAction onClick={doManualSave} className="bg-destructive hover:bg-destructive/90">
                             Yes, Overwrite Global File
                         </AlertDialogAction>
                     </AlertDialogFooter>
