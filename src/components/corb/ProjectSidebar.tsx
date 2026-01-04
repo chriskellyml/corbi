@@ -1,5 +1,5 @@
 import { Project, ProjectRun } from "../../data/mock-fs";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Ban } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -28,6 +28,7 @@ interface ProjectSidebarProps {
   onRenameFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
   onDeleteFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
   onMoveFile: (projectId: string, fileName: string, direction: 'up' | 'down', type: 'job'|'script') => void;
+  currentEnv: string;
 }
 
 export function ProjectSidebar({ 
@@ -42,7 +43,8 @@ export function ProjectSidebar({
   onCopyFile,
   onRenameFile,
   onDeleteFile,
-  onMoveFile
+  onMoveFile,
+  currentEnv
 }: ProjectSidebarProps) {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -81,6 +83,23 @@ export function ProjectSidebar({
   const sortedJobs = selectedProject 
     ? [...selectedProject.jobs].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) 
     : [];
+
+  // Helper to check if job enabled for current env
+  const isJobEnabled = (content: string) => {
+      // Look for ENABLED_{currentEnv}=true
+      // We assume basic key-value parsing
+      const lines = content.split('\n');
+      const key = `ENABLED_${currentEnv}`;
+      for(const line of lines) {
+          const trimmed = line.trim();
+          if(trimmed.startsWith('#')) continue;
+          if(trimmed === `${key}=true`) return true;
+          // Also handle spaces around =
+          const parts = trimmed.split('=');
+          if(parts.length === 2 && parts[0].trim() === key && parts[1].trim() === 'true') return true;
+      }
+      return false;
+  };
 
   // PROJECT LIST VIEW
   if (!selectedProject) {
@@ -149,23 +168,27 @@ export function ProjectSidebar({
                    </Button>
                </div>
                
-               {sortedJobs.map((job, index) => (
-                 <FileItem
-                   key={job.name}
-                   name={job.name}
-                   type="job"
-                   icon={FileCog} 
-                   iconColor="text-blue-500"
-                   isSelected={selection?.kind === 'source' && selection.name === job.name}
-                   onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
-                   onRun={() => onRunJob(job.name)}
-                   onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
-                   onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
-                   onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
-                   onMoveUp={index > 0 ? () => onMoveFile(selectedProject.id, job.name, 'up', 'job') : undefined}
-                   onMoveDown={index < sortedJobs.length - 1 ? () => onMoveFile(selectedProject.id, job.name, 'down', 'job') : undefined}
-                 />
-               ))}
+               {sortedJobs.map((job, index) => {
+                 const enabled = isJobEnabled(job.content);
+                 return (
+                    <FileItem
+                        key={job.name}
+                        name={job.name}
+                        type="job"
+                        icon={enabled ? FileCog : Ban} 
+                        iconColor={enabled ? "text-blue-500" : "text-muted-foreground"}
+                        isDisabled={!enabled}
+                        isSelected={selection?.kind === 'source' && selection.name === job.name}
+                        onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
+                        onRun={() => onRunJob(job.name)}
+                        onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
+                        onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
+                        onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
+                        onMoveUp={index > 0 ? () => onMoveFile(selectedProject.id, job.name, 'up', 'job') : undefined}
+                        onMoveDown={index < sortedJobs.length - 1 ? () => onMoveFile(selectedProject.id, job.name, 'down', 'job') : undefined}
+                    />
+                 );
+               })}
 
                {/* OTHER SCRIPTS (Libs, Helpers, etc) */}
                {otherScripts.length > 0 && (
@@ -256,6 +279,7 @@ function FileItem({
     type, 
     icon: Icon, 
     iconColor, 
+    isDisabled,
     isSelected, 
     onClick, 
     onRun, 
@@ -275,16 +299,17 @@ function FileItem({
     <div
       className={cn(
         "group w-full flex items-center gap-2 px-6 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground border-l-2 border-transparent relative cursor-pointer",
-        isSelected && "bg-accent text-accent-foreground border-primary"
+        isSelected && "bg-accent text-accent-foreground border-primary",
+        isDisabled && "opacity-60 grayscale"
       )}
       onClick={onClick}
     >
       <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
-      <span className="truncate flex-1" title={name}>{displayName}</span>
+      <span className={cn("truncate flex-1", isDisabled && "line-through text-muted-foreground")} title={name}>{displayName}</span>
       
       {/* Actions (visible on hover) */}
-      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm pl-2">
-          {type === 'job' && (
+      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm pl-2 z-10">
+          {type === 'job' && !isDisabled && (
               <>
                   <Button 
                     variant="ghost" 

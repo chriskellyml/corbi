@@ -3,8 +3,9 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Play, PlayCircle } from "lucide-react";
+import { Play, PlayCircle, Ban } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 
 export interface RunOptions {
   limit: number | null;
@@ -20,15 +21,17 @@ export interface RunOptions {
 interface RunFooterProps {
   jobName: string;
   onRun: (options: RunOptions) => void;
+  disabled?: boolean;
 }
 
-export function RunFooter({ jobName, onRun }: RunFooterProps) {
+export function RunFooter({ jobName, onRun, disabled }: RunFooterProps) {
   const [noLimit, setNoLimit] = useState(false);
   const [limit, setLimit] = useState("10");
   const [dryRun, setDryRun] = useState(true);
   const [threadCount, setThreadCount] = useState("4");
 
   const handleRun = () => {
+    if (disabled) return;
     onRun({
       limit: noLimit ? null : parseInt(limit) || 10,
       dryRun,
@@ -42,7 +45,15 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
   };
 
   return (
-    <div className="border-t border-border bg-background p-4 flex items-center gap-6 shadow-up">
+    <div className="border-t border-border bg-background p-4 flex items-center gap-6 shadow-up relative">
+        {disabled && (
+             <div className="absolute inset-0 bg-background/50 z-10 cursor-not-allowed flex items-center justify-center backdrop-blur-[1px]">
+                 <span className="bg-background border rounded-md shadow-sm px-3 py-1.5 text-xs font-semibold flex items-center gap-2">
+                     <Ban className="h-3 w-3 text-destructive" />
+                     Job Disabled in current environment
+                 </span>
+             </div>
+        )}
         <div className="flex items-center gap-3">
             <Label htmlFor="limit" className="text-xs font-semibold text-muted-foreground uppercase">Limit</Label>
             <div className="flex items-center gap-2">
@@ -95,6 +106,7 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
         <Button 
             onClick={handleRun} 
             size="sm"
+            disabled={disabled}
             className={cn(
                 "min-w-[140px] gap-2 font-semibold shadow-sm transition-all",
                 dryRun 

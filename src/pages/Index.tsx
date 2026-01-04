@@ -69,7 +69,8 @@ export default function Index() {
         setEnvFiles(e);
         setOriginalEnvFiles({ ...e });
         
-        if (!e['LOC'] && Object.keys(e).length > 0) {
+        // If we have environments but none selected (or invalid), select first
+        if (Object.keys(e).length > 0 && (!environment || !e[environment])) {
             setEnvironment(Object.keys(e)[0]);
         }
     } catch (err) {
@@ -207,7 +208,6 @@ export default function Index() {
                 
                 // We need to update the `fileName` (which was the old name) to the new name 
                 // so we can find the index for swapping.
-                // Strategy: Find by fuzzy suffix match (the "clean name" part).
                 const cleanOriginal = fileName.replace(/^\d+-/, '');
                 const found = sorted.find(f => f.name === cleanOriginal || f.name.endsWith(`-${cleanOriginal}`));
                 if (found) {
@@ -465,12 +465,30 @@ export default function Index() {
     }
   };
 
+  // Helper to check if job is enabled
+  const checkJobEnabled = (content: string, env: string) => {
+    const lines = content.split('\n');
+    const key = `ENABLED_${env}`;
+    for(const line of lines) {
+        const trimmed = line.trim();
+        if(trimmed.startsWith('#')) continue;
+        const parts = trimmed.split('=');
+        if(parts.length === 2 && parts[0].trim() === key && parts[1].trim() === 'true') return true;
+    }
+    return false;
+  };
+
   const isJob = selection?.kind === 'source' && selection.type === 'job';
   const isRunOptions = selection?.kind === 'run' && selection.fileName === 'job.options';
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
   const isReadOnly = selection?.kind === 'run';
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
   const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
+
+  // Determine if current job is enabled for current env
+  const isCurrentJobEnabled = isJob 
+    ? checkJobEnabled(getCurrentFileContent(), environment)
+    : false;
 
   if (loading) {
       return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
@@ -498,6 +516,7 @@ export default function Index() {
           onRenameFile={handleRenameFile}
           onDeleteFile={handleDeleteFile}
           onMoveFile={handleMoveFile}
+          currentEnv={environment}
         />
 
         {selectedProject ? (
@@ -514,6 +533,8 @@ export default function Index() {
                             onChange={handleContentChange}
                             project={selectedProject}
                             onRefreshData={loadData}
+                            currentEnv={environment}
+                            availableEnvs={Object.keys(envFiles)}
                         />
                         </div>
 
@@ -641,6 +662,7 @@ export default function Index() {
                     <RunFooter 
                         jobName={selection.name}
                         onRun={handleRunRequest}
+                        disabled={!isCurrentJobEnabled}
                     />
                 )}
               </div>
