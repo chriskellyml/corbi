@@ -3,7 +3,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Play, PlayCircle } from "lucide-react";
+import { Play, PlayCircle, Lock } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export interface RunOptions {
@@ -20,15 +20,17 @@ export interface RunOptions {
 interface RunFooterProps {
   jobName: string;
   onRun: (options: RunOptions) => void;
+  disabled?: boolean;
 }
 
-export function RunFooter({ jobName, onRun }: RunFooterProps) {
+export function RunFooter({ jobName, onRun, disabled }: RunFooterProps) {
   const [noLimit, setNoLimit] = useState(false);
   const [limit, setLimit] = useState("10");
   const [dryRun, setDryRun] = useState(true);
   const [threadCount, setThreadCount] = useState("4");
 
   const handleRun = () => {
+    if (disabled) return;
     onRun({
       limit: noLimit ? null : parseInt(limit) || 10,
       dryRun,
@@ -42,7 +44,15 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
   };
 
   return (
-    <div className="border-t border-border bg-background p-4 flex items-center gap-6 shadow-up">
+    <div className={cn("border-t border-border bg-background p-4 flex items-center gap-6 shadow-up relative transition-all duration-300", disabled && "opacity-70 grayscale")}>
+        {disabled && (
+            <div className="absolute inset-0 z-10 bg-background/50 cursor-not-allowed flex items-center justify-center backdrop-blur-[1px]">
+                 <div className="bg-background border rounded-full px-4 py-1.5 shadow-sm flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                    <Lock className="h-3 w-3" /> Job Disabled
+                 </div>
+            </div>
+        )}
+        
         <div className="flex items-center gap-3">
             <Label htmlFor="limit" className="text-xs font-semibold text-muted-foreground uppercase">Limit</Label>
             <div className="flex items-center gap-2">
@@ -51,7 +61,7 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
                     type="number"
                     value={limit}
                     onChange={(e) => setLimit(e.target.value)}
-                    disabled={noLimit}
+                    disabled={noLimit || disabled}
                     className="w-20 h-8 text-sm"
                 />
                 <div className="flex items-center space-x-1.5">
@@ -59,6 +69,7 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
                         id="no-limit" 
                         checked={noLimit} 
                         onCheckedChange={(c) => setNoLimit(!!c)} 
+                        disabled={disabled}
                         className="h-4 w-4"
                     />
                     <Label htmlFor="no-limit" className="cursor-pointer text-xs font-normal">None</Label>
@@ -75,6 +86,7 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
                 type="number"
                 value={threadCount}
                 onChange={(e) => setThreadCount(e.target.value)}
+                disabled={disabled}
                 className="w-16 h-8 text-sm"
             />
         </div>
@@ -86,6 +98,7 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
                 id="dry-run" 
                 checked={dryRun} 
                 onCheckedChange={(c) => setDryRun(!!c)} 
+                disabled={disabled}
             />
             <Label htmlFor="dry-run" className="cursor-pointer text-sm font-medium">Dry Run</Label>
         </div>
@@ -95,6 +108,7 @@ export function RunFooter({ jobName, onRun }: RunFooterProps) {
         <Button 
             onClick={handleRun} 
             size="sm"
+            disabled={disabled}
             className={cn(
                 "min-w-[140px] gap-2 font-semibold shadow-sm transition-all",
                 dryRun 

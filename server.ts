@@ -21,6 +21,7 @@ const SUPPORT_DIR = path.join(WORKING_DIR, 'support');
 const URIS_DIR = path.join(SUPPORT_DIR, 'uris');
 const PROCESS_DIR = path.join(SUPPORT_DIR, 'process');
 const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
+const PERMISSIONS_FILE = path.join(WORKING_DIR, 'permissions.json');
 
 // Ensure working directory exists
 if (!existsSync(WORKING_DIR)) {
@@ -54,6 +55,11 @@ if (!existsSync(PROCESS_DIR)) {
 // Ensure uploads dir
 if (!existsSync(UPLOADS_DIR)) {
     try { mkdirSync(UPLOADS_DIR, { recursive: true }); } catch(e) {}
+}
+
+// Initialize permissions file if it doesn't exist
+if (!existsSync(PERMISSIONS_FILE)) {
+    try { fs.writeFile(PERMISSIONS_FILE, '{}', 'utf-8'); } catch(e) {}
 }
 
 const upload = multer({ dest: UPLOADS_DIR });
@@ -102,6 +108,30 @@ async function copyDir(src: string, dest: string) {
         }
     }
 }
+
+// GET /api/permissions
+app.get('/api/permissions', async (req, res) => {
+    try {
+        if (!existsSync(PERMISSIONS_FILE)) {
+            return res.json({});
+        }
+        const content = await fs.readFile(PERMISSIONS_FILE, 'utf-8');
+        res.json(JSON.parse(content || '{}'));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/permissions
+app.post('/api/permissions', async (req, res) => {
+    try {
+        const permissions = req.body;
+        await fs.writeFile(PERMISSIONS_FILE, JSON.stringify(permissions, null, 2), 'utf-8');
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // GET /api/projects
 app.get('/api/projects', async (req, res) => {

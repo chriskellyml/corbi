@@ -1,5 +1,5 @@
-import { Project, ProjectRun } from "../../data/mock-fs";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown } from "lucide-react";
+import { Project, ProjectRun, PermissionMap } from "../../types";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, Unlock } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -28,6 +28,10 @@ interface ProjectSidebarProps {
   onRenameFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
   onDeleteFile: (projectId: string, fileName: string, type: 'job'|'script') => void;
   onMoveFile: (projectId: string, fileName: string, direction: 'up' | 'down', type: 'job'|'script') => void;
+  
+  // Permissions
+  permissions: PermissionMap;
+  currentEnv: string;
 }
 
 export function ProjectSidebar({ 
@@ -42,7 +46,9 @@ export function ProjectSidebar({
   onCopyFile,
   onRenameFile,
   onDeleteFile,
-  onMoveFile
+  onMoveFile,
+  permissions,
+  currentEnv
 }: ProjectSidebarProps) {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -149,23 +155,29 @@ export function ProjectSidebar({
                    </Button>
                </div>
                
-               {sortedJobs.map((job, index) => (
-                 <FileItem
-                   key={job.name}
-                   name={job.name}
-                   type="job"
-                   icon={FileCog} 
-                   iconColor="text-blue-500"
-                   isSelected={selection?.kind === 'source' && selection.name === job.name}
-                   onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
-                   onRun={() => onRunJob(job.name)}
-                   onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
-                   onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
-                   onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
-                   onMoveUp={index > 0 ? () => onMoveFile(selectedProject.id, job.name, 'up', 'job') : undefined}
-                   onMoveDown={index < sortedJobs.length - 1 ? () => onMoveFile(selectedProject.id, job.name, 'down', 'job') : undefined}
-                 />
-               ))}
+               {sortedJobs.map((job, index) => {
+                 const isEnabled = permissions?.[selectedProject.id]?.[job.name]?.[currentEnv] === true;
+                 
+                 return (
+                    <FileItem
+                    key={job.name}
+                    name={job.name}
+                    type="job"
+                    icon={FileCog} 
+                    iconColor={isEnabled ? "text-blue-500" : "text-gray-400"}
+                    isSelected={selection?.kind === 'source' && selection.name === job.name}
+                    onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
+                    onRun={() => onRunJob(job.name)}
+                    onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
+                    onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
+                    onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
+                    onMoveUp={index > 0 ? () => onMoveFile(selectedProject.id, job.name, 'up', 'job') : undefined}
+                    onMoveDown={index < sortedJobs.length - 1 ? () => onMoveFile(selectedProject.id, job.name, 'down', 'job') : undefined}
+                    statusIndicator={!isEnabled ? <Lock className="h-2.5 w-2.5 text-muted-foreground/50 ml-1.5" /> : undefined}
+                    disabled={!isEnabled}
+                    />
+                 );
+               })}
 
                {/* OTHER SCRIPTS (Libs, Helpers, etc) */}
                {otherScripts.length > 0 && (
@@ -264,11 +276,12 @@ function FileItem({
     onDelete, 
     showDeleteButton,
     onMoveUp,
-    onMoveDown 
+    onMoveDown,
+    statusIndicator,
+    disabled
 }: any) {
     
   // Parse numeric prefix for display
-  // We now show the full name (minus extension) even if it has a prefix
   const displayName = name.replace(/\.(job|xqy|sjs|js|txt)$/, '');
   
   return (
@@ -280,11 +293,12 @@ function FileItem({
       onClick={onClick}
     >
       <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
-      <span className="truncate flex-1" title={name}>{displayName}</span>
+      <span className={cn("truncate flex-1", disabled && "opacity-70")} title={name}>{displayName}</span>
+      {statusIndicator}
       
       {/* Actions (visible on hover) */}
       <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm pl-2">
-          {type === 'job' && (
+          {type === 'job' && !disabled && (
               <>
                   <Button 
                     variant="ghost" 

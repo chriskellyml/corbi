@@ -34,4 +34,7 @@ export interface Project {
   runs: ProjectRun[];
 }
 
-export type Environment = string; // Was union, but now dynamic from FS
+export type Environment = string; 
+
+// Permissions: ProjectID -> JobName -> EnvName -> boolean
+export type PermissionMap = Record<string, Record<string, Record<string, boolean>>>;

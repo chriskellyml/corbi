@@ -1,4 +1,4 @@
-import { Project } from "../types";
+import { Project, PermissionMap } from "../types";
 
 const API_BASE = "http://localhost:3001/api";
 
@@ -12,6 +12,21 @@ export async function fetchEnvFiles(): Promise<Record<string, string>> {
   const res = await fetch(`${API_BASE}/envs`);
   if (!res.ok) throw new Error("Failed to fetch envs");
   return res.json();
+}
+
+export async function fetchPermissions(): Promise<PermissionMap> {
+    const res = await fetch(`${API_BASE}/permissions`);
+    if (!res.ok) throw new Error("Failed to fetch permissions");
+    return res.json();
+}
+
+export async function savePermissions(permissions: PermissionMap): Promise<void> {
+    const res = await fetch(`${API_BASE}/permissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(permissions)
+    });
+    if (!res.ok) throw new Error("Failed to save permissions");
 }
 
 export async function fetchSupportUris(): Promise<string[]> {

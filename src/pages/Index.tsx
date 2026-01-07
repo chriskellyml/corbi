@@ -6,8 +6,8 @@ import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
 import { RunFooter, RunOptions } from "../components/corb/RunFooter";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
-import { Project, ProjectRun } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile } from "../lib/api";
+import { Project, ProjectRun, PermissionMap } from "../types";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions } from "../lib/api";
 import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ export default function Index() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
   const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, string>>({});
+  const [permissions, setPermissions] = useState<PermissionMap>({});
   const [loading, setLoading] = useState(true);
 
   // UI State
@@ -64,10 +65,11 @@ export default function Index() {
 
   const loadData = async () => {
     try {
-        const [p, e] = await Promise.all([fetchProjects(), fetchEnvFiles()]);
+        const [p, e, perms] = await Promise.all([fetchProjects(), fetchEnvFiles(), fetchPermissions()]);
         setProjects(p);
         setEnvFiles(e);
         setOriginalEnvFiles({ ...e });
+        setPermissions(perms);
         
         if (!e['LOC'] && Object.keys(e).length > 0) {
             setEnvironment(Object.keys(e)[0]);
@@ -100,6 +102,12 @@ export default function Index() {
   const currentUserName = getCurrentEnvUser();
   const passwordKey = `${environment}:${currentUserName}`;
   const hasPassword = !!sessionPasswords[passwordKey];
+
+  // Helper to check if current selected job is enabled
+  const isCurrentJobEnabled = useMemo(() => {
+      if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return false;
+      return permissions[selectedProjectId]?.[selection.name]?.[environment] === true;
+  }, [permissions, selectedProjectId, selection, environment]);
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
@@ -207,7 +215,6 @@ export default function Index() {
                 
                 // We need to update the `fileName` (which was the old name) to the new name 
                 // so we can find the index for swapping.
-                // Strategy: Find by fuzzy suffix match (the "clean name" part).
                 const cleanOriginal = fileName.replace(/^\d+-/, '');
                 const found = sorted.find(f => f.name === cleanOriginal || f.name.endsWith(`-${cleanOriginal}`));
                 if (found) {
@@ -391,6 +398,30 @@ export default function Index() {
       }
   };
 
+  // Toggle permission for the currently selected job in the current environment
+  const toggleCurrentJobPermission = async () => {
+      if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return;
+      
+      const newPermissions = JSON.parse(JSON.stringify(permissions));
+      if (!newPermissions[selectedProjectId]) newPermissions[selectedProjectId] = {};
+      if (!newPermissions[selectedProjectId][selection.name]) newPermissions[selectedProjectId][selection.name] = {};
+      
+      const currentVal = newPermissions[selectedProjectId][selection.name][environment];
+      newPermissions[selectedProjectId][selection.name][environment] = !currentVal;
+      
+      try {
+          await savePermissions(newPermissions);
+          setPermissions(newPermissions);
+          if (!currentVal) {
+              toast.success(`Enabled ${selection.name} in ${environment}`);
+          } else {
+              toast.info(`Disabled ${selection.name} in ${environment}`);
+          }
+      } catch (e) {
+          toast.error("Failed to save permission change");
+      }
+  };
+
   const getCurrentFileContent = () => {
     if (!selectedProject || !selection) return "";
     if (selection.kind === 'source') {
@@ -415,8 +446,6 @@ export default function Index() {
   const executeRun = async (projectId: string, jobName: string, options: RunOptions) => {
     try {
         const runId = await createRun(projectId, jobName, environment, options);
-        // await loadData(); // Full refresh to get new run
-        // Optimization: just fetch projects
         const p = await fetchProjects();
         setProjects(p);
 
@@ -435,11 +464,17 @@ export default function Index() {
   const handleRunRequest = async (options: RunOptions) => {
     if (!selectedProjectId) return;
     
+    // Safety check for permissions
+    if (!isCurrentJobEnabled) {
+        toast.error(`Job is disabled in ${environment}`);
+        return;
+    }
+    
     let jobName = '';
     if (selection?.kind === 'source' && selection.type === 'job') {
         jobName = selection.name;
     } else {
-        jobName = (pendingRunJobName || ""); // Fallback
+        jobName = (pendingRunJobName || ""); 
     }
     
     // Check Password
@@ -472,6 +507,12 @@ export default function Index() {
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
   const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
 
+  // Derive job specific permissions for topbar
+  const currentJobPermissions = useMemo(() => {
+      if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return undefined;
+      return permissions[selectedProjectId]?.[selection.name];
+  }, [permissions, selectedProjectId, selection]);
+
   if (loading) {
       return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
   }
@@ -482,6 +523,7 @@ export default function Index() {
         currentEnv={environment} 
         environments={Object.keys(envFiles)}
         onEnvChange={setEnvironment} 
+        jobPermissions={currentJobPermissions}
       />
       
       <div className="flex-1 flex overflow-hidden">
@@ -498,6 +540,8 @@ export default function Index() {
           onRenameFile={handleRenameFile}
           onDeleteFile={handleDeleteFile}
           onMoveFile={handleMoveFile}
+          permissions={permissions}
+          currentEnv={environment}
         />
 
         {selectedProject ? (
@@ -514,6 +558,9 @@ export default function Index() {
                             onChange={handleContentChange}
                             project={selectedProject}
                             onRefreshData={loadData}
+                            currentEnv={environment}
+                            isEnabled={isCurrentJobEnabled}
+                            onToggleEnabled={toggleCurrentJobPermission}
                         />
                         </div>
 
@@ -641,6 +688,7 @@ export default function Index() {
                     <RunFooter 
                         jobName={selection.name}
                         onRun={handleRunRequest}
+                        disabled={!isCurrentJobEnabled}
                     />
                 )}
               </div>

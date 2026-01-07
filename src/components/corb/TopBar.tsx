@@ -1,9 +1,12 @@
 import { cn } from "../../lib/utils";
+import { Check, X } from "lucide-react";
 
 interface TopBarProps {
   currentEnv: string;
   environments: string[];
   onEnvChange: (env: string) => void;
+  // Optional: Permissions for a selected job
+  jobPermissions?: Record<string, boolean>;
 }
 
 const ENV_COLORS: Record<string, string> = {
@@ -16,7 +19,7 @@ const ENV_COLORS: Record<string, string> = {
 
 const DEFAULT_COLOR = "bg-slate-700 border-slate-600";
 
-export function TopBar({ currentEnv, environments, onEnvChange }: TopBarProps) {
+export function TopBar({ currentEnv, environments, onEnvChange, jobPermissions }: TopBarProps) {
   return (
     <div className={cn(
       "w-full h-16 flex items-center justify-between px-6 text-white transition-colors duration-300 shadow-md",
@@ -29,21 +32,37 @@ export function TopBar({ currentEnv, environments, onEnvChange }: TopBarProps) {
       
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium opacity-90">Environment:</span>
-        <div className="flex bg-black/20 p-1 rounded-lg">
-          {environments.map((env) => (
-            <button
-              key={env}
-              onClick={() => onEnvChange(env)}
-              className={cn(
-                "px-3 py-1 text-xs font-bold rounded-md transition-all",
-                currentEnv === env 
-                  ? "bg-white text-black shadow-sm" 
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              )}
-            >
-              {env}
-            </button>
-          ))}
+        <div className="flex bg-black/20 p-1 rounded-lg gap-1">
+          {environments.map((env) => {
+             const isEnabled = jobPermissions ? jobPermissions[env] : undefined;
+             
+             return (
+                <button
+                key={env}
+                onClick={() => onEnvChange(env)}
+                className={cn(
+                    "relative px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5",
+                    currentEnv === env 
+                    ? "bg-white text-black shadow-sm" 
+                    : "text-white/70 hover:bg-white/10 hover:text-white",
+                    // Override styles if permissions are provided and we aren't the selected one?
+                    // The prompt says "white on RED if not allowed and white on GREEN if good"
+                    // If currentEnv matches, it's white bg, black text usually. 
+                    // Let's adapt:
+                    // If permissions exist, use red/green backgrounds for ALL pills, unless selected?
+                    // Let's keep the selection logic but add the indicator.
+                )}
+                >
+                {env}
+                {isEnabled !== undefined && (
+                    <div className={cn(
+                        "h-2 w-2 rounded-full",
+                        isEnabled ? "bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.8)]" : "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"
+                    )} />
+                )}
+                </button>
+             );
+          })}
         </div>
       </div>
     </div>
