@@ -8,7 +8,7 @@ import { RunFooter, RunOptions } from "../components/corb/RunFooter";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions } from "../lib/api";
-import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
+import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, Settings2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
@@ -354,32 +354,70 @@ export default function Index() {
   const handleContentChange = (newContent: string) => {
     if (!selectedProject || !selection || selection.kind === 'run') return;
 
-    const newProjects = projects.map(p => {
-      if (p.id !== selectedProjectId) return p;
-      if (selection.type === 'job') {
-        return {
-          ...p,
-          jobs: p.jobs.map(j => j.name === selection.name ? { ...j, content: newContent } : j)
-        };
-      } else {
-        return {
-          ...p,
-          scripts: p.scripts.map(s => s.name === selection.name ? { ...s, content: newContent } : s)
-        };
-      }
-    });
-    setProjects(newProjects);
+    updateFileContent(selectedProject.id, selection.name, selection.type, newContent);
+  };
 
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-        saveFile(selectedProjectId, selection.name, newContent, selection.type)
-            .then(() => {})
-            .catch(() => toast.error("Failed to save changes"));
-    }, 1000);
+  const updateFileContent = (projectId: string, fileName: string, type: 'job'|'script', newContent: string) => {
+    const newProjects = projects.map(p => {
+        if (p.id !== projectId) return p;
+        if (type === 'job') {
+          return {
+            ...p,
+            jobs: p.jobs.map(j => j.name === fileName ? { ...j, content: newContent } : j)
+          };
+        } else {
+          return {
+            ...p,
+            scripts: p.scripts.map(s => s.name === fileName ? { ...s, content: newContent } : s)
+          };
+        }
+      });
+      setProjects(newProjects);
+  
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+          saveFile(projectId, fileName, newContent, type)
+              .then(() => {})
+              .catch(() => toast.error("Failed to save changes"));
+      }, 1000);
   };
 
   const handleEnvFileChange = (newContent: string) => {
     setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
+  };
+
+  // Specialized Handler for overriding properties in a Job File
+  const handleJobOverrideChange = (key: string, value: string | undefined) => {
+      if (!selectedProject || !selection || selection.kind !== 'source' || selection.type !== 'job') return;
+
+      const jobContent = selectedProject.jobs.find(j => j.name === selection.name)?.content || "";
+      const lines = jobContent.split('\n');
+      
+      let newLines: string[] = [];
+      let found = false;
+      
+      if (value === undefined) {
+          // Delete
+          newLines = lines.filter(line => {
+             const trimmed = line.trim();
+             // Keep comments
+             if (trimmed.startsWith('#')) return true;
+             return trimmed.split('=')[0].trim() !== key;
+          });
+      } else {
+          // Update or Add
+          newLines = lines.map(line => {
+             const trimmed = line.trim();
+             if (!trimmed.startsWith('#') && trimmed.split('=')[0].trim() === key) {
+                 found = true;
+                 return `${key}=${value}`;
+             }
+             return line;
+          });
+          if (!found) newLines.push(`${key}=${value}`);
+      }
+
+      updateFileContent(selectedProject.id, selection.name, 'job', newLines.join('\n'));
   };
 
   const handleResetEnv = () => {
@@ -527,6 +565,7 @@ export default function Index() {
       />
       
       <div className="flex-1 flex overflow-hidden">
+        {/* LEFT COLUMN: SIDEBAR */}
         <ProjectSidebar 
           projects={projects} 
           selectedProjectId={selectedProjectId} 
@@ -544,165 +583,171 @@ export default function Index() {
           currentEnv={environment}
         />
 
+        {/* MIDDLE COLUMN: EDITOR */}
         {selectedProject ? (
-          <div className="flex-1 flex flex-col min-w-0 bg-muted/10">
-            {selection ? (
-              <div className="flex-1 flex flex-col overflow-hidden relative">
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    {isJob && (
-                    <div className="flex-1 flex gap-4 p-4 overflow-hidden">
-                        <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                        <JobEditor 
-                            jobName={selection.name}
-                            content={getCurrentFileContent()}
-                            onChange={handleContentChange}
-                            project={selectedProject}
-                            onRefreshData={loadData}
-                            currentEnv={environment}
-                            isEnabled={isCurrentJobEnabled}
-                            onToggleEnabled={toggleCurrentJobPermission}
-                        />
-                        </div>
-
-                        {!isReadOnly && (
-                        <div className="w-1/3 flex flex-col gap-4">
-                            <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
-                                    <PropertiesEditor 
-                                        title={`Environment: ${environment}.props`}
-                                        content={envFiles[environment] || ""}
-                                        onChange={handleEnvFileChange}
-                                        originalContent={originalEnvFiles[environment]}
-                                    />
-                                    {isEnvDirty && (
-                                        <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
-                                            <div className="text-xs text-amber-800 flex items-start gap-2">
-                                                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                                                <div>
-                                                    <div className="font-semibold">Unsaved Changes</div>
-                                                    <div className="opacity-90">Changes must be saved to take effect.</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <Button 
-                                                    onClick={handleResetEnv} 
-                                                    size="sm" 
-                                                    variant="outline"
-                                                    className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
-                                                >
-                                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                                                </Button>
-                                                <Button 
-                                                    onClick={() => setIsEnvSaveDialogOpen(true)} 
-                                                    size="sm" 
-                                                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
-                                                >
-                                                    <Save className="mr-2 h-4 w-4" /> Save
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    )}
+          <>
+            <div className="flex-1 flex flex-col min-w-0 bg-muted/10 border-r border-border">
+                {selection ? (
+                <div className="flex-1 flex flex-col overflow-hidden relative">
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {isJob && (
+                            <div className="flex-1 flex flex-col overflow-hidden bg-background">
+                                <JobEditor 
+                                    jobName={selection.name}
+                                    content={getCurrentFileContent()}
+                                    onChange={handleContentChange}
+                                    project={selectedProject}
+                                    onRefreshData={loadData}
+                                    currentEnv={environment}
+                                    isEnabled={isCurrentJobEnabled}
+                                    onToggleEnabled={toggleCurrentJobPermission}
+                                />
                             </div>
-
-                            <div className="border rounded-lg shadow-sm bg-background p-4 shrink-0">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-semibold text-sm flex items-center gap-2">
-                                            <KeyRound className="h-4 w-4 text-muted-foreground" />
-                                            Authentication
-                                        </h3>
-                                        <div className={cn(
-                                            "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
-                                            hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
-                                        )}>
-                                            {hasPassword ? "Authorized" : "Unauthorized"}
-                                        </div>
-                                    </div>
-                                    <div className="text-xs text-muted-foreground mb-3">
-                                        User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
-                                        <br/>
-                                        {hasPassword 
-                                            ? "Password stored in session memory." 
-                                            : "No password currently stored for this session."
-                                        }
-                                    </div>
-                                    <Button 
-                                        variant={hasPassword ? "outline" : "secondary"} 
-                                        size="sm" 
-                                        className="w-full"
-                                        onClick={() => {
-                                            setPendingRunOptions(null); 
-                                            setIsPasswordDialogOpen(true);
-                                        }}
-                                    >
-                                        {hasPassword ? (
-                                            <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
-                                        ) : (
-                                            <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
-                                        )}
-                                    </Button>
-                            </div>
-                        </div>
                         )}
-                    </div>
-                    )}
-                    
-                    {/* Fallback for Run Options (Read Only) */}
-                    {isRunOptions && (
-                        <div className="flex-1 flex gap-4 p-4 overflow-hidden">
-                            <div className="flex-1 border rounded-lg overflow-hidden shadow-sm bg-background flex flex-col">
+                        
+                        {/* Run Options View (Read Only) */}
+                        {isRunOptions && (
+                            <div className="flex-1 flex flex-col overflow-hidden bg-background">
                                 <PropertiesEditor 
                                     title={`Run Snapshot: ${selection.fileName}`}
-                                    content={getCurrentFileContent()} 
-                                    onChange={() => {}}
+                                    baseContent={getCurrentFileContent()} 
+                                    onBaseChange={() => {}}
                                     readOnly={true}
                                 />
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {isScript && (
-                    <div className="flex-1 border-l border-border relative">
-                        <ScriptEditor 
-                        fileName={selection.kind === 'source' ? selection.name : selection.fileName} 
-                        content={getCurrentFileContent()} 
-                        onChange={handleContentChange} 
-                        readOnly={isReadOnly}
-                        />
+                        {isScript && (
+                            <div className="flex-1 border-l border-border relative">
+                                <ScriptEditor 
+                                fileName={selection.kind === 'source' ? selection.name : selection.fileName} 
+                                content={getCurrentFileContent()} 
+                                onChange={handleContentChange} 
+                                readOnly={isReadOnly}
+                                />
+                            </div>
+                        )}
+                        {isLogOrCsv && (
+                            <div className="flex-1 flex flex-col bg-background">
+                                <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
+                                    <span>{selection.fileName}</span>
+                                    <span className="uppercase">{selection.kind} / {selection.category}</span>
+                                </div>
+                                <Textarea 
+                                    readOnly 
+                                    className="flex-1 resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed" 
+                                    value={getCurrentFileContent()} 
+                                />
+                            </div>
+                        )}
                     </div>
-                    )}
-                    {isLogOrCsv && (
-                    <div className="flex-1 flex flex-col bg-background">
-                        <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
-                            <span>{selection.fileName}</span>
-                            <span className="uppercase">{selection.kind} / {selection.category}</span>
-                        </div>
-                        <Textarea 
-                            readOnly 
-                            className="flex-1 resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed" 
-                            value={getCurrentFileContent()} 
+
+                    {isJob && !isReadOnly && (
+                        <RunFooter 
+                            jobName={selection.name}
+                            onRun={handleRunRequest}
+                            disabled={!isCurrentJobEnabled}
                         />
-                    </div>
                     )}
                 </div>
-
-                {isJob && !isReadOnly && (
-                    <RunFooter 
-                        jobName={selection.name}
-                        onRun={handleRunRequest}
-                        disabled={!isCurrentJobEnabled}
-                    />
+                ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
+                    <div className="max-w-md">
+                    <h3 className="text-xl font-semibold mb-2 text-foreground">
+                        {selectedProject.name}
+                    </h3>
+                    <p className="mb-4 text-sm">Select a source file to edit or a run artifact to inspect.</p>
+                    </div>
+                </div>
                 )}
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
-                <div className="max-w-md">
-                  <h3 className="text-xl font-semibold mb-2 text-foreground">
-                    {selectedProject.name}
-                  </h3>
-                  <p className="mb-4 text-sm">Select a source file to edit or a run artifact to inspect.</p>
+            </div>
+
+            {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES */}
+            <div className="w-80 bg-background flex flex-col border-l border-border">
+                {/* 1. Env Properties Editor */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <PropertiesEditor 
+                        title={isJob ? `Overrides for ${environment}` : `Environment: ${environment}.props`}
+                        baseContent={envFiles[environment] || ""}
+                        overrideContent={isJob ? getCurrentFileContent() : null}
+                        onBaseChange={handleEnvFileChange}
+                        onOverrideChange={handleJobOverrideChange}
+                        readOnly={isReadOnly}
+                    />
+
+                    {/* Unsaved Env Changes Warning (Only in global mode) */}
+                    {!isJob && isEnvDirty && (
+                        <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
+                            <div className="text-xs text-amber-800 flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                <div>
+                                    <div className="font-semibold">Unsaved Changes</div>
+                                    <div className="opacity-90">Global environment changes must be saved to take effect.</div>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button 
+                                    onClick={handleResetEnv} 
+                                    size="sm" 
+                                    variant="outline"
+                                    className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
+                                >
+                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                                </Button>
+                                <Button 
+                                    onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                    size="sm" 
+                                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                                >
+                                    <Save className="mr-2 h-4 w-4" /> Save
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </div>
-              </div>
-            )}
-          </div>
+
+                {/* 2. Authentication (Only visible when NO job is selected, per requirements) */}
+                {!isJob && (
+                    <div className="border-t bg-muted/10 p-4 shrink-0">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-sm flex items-center gap-2">
+                                <KeyRound className="h-4 w-4 text-muted-foreground" />
+                                Authentication
+                            </h3>
+                            <div className={cn(
+                                "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
+                                hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
+                            )}>
+                                {hasPassword ? "Authorized" : "Unauthorized"}
+                            </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground mb-3">
+                            User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
+                            <br/>
+                            {hasPassword 
+                                ? "Password stored in session memory." 
+                                : "No password currently stored for this session."
+                            }
+                        </div>
+                        <Button 
+                            variant={hasPassword ? "outline" : "secondary"} 
+                            size="sm" 
+                            className="w-full"
+                            onClick={() => {
+                                setPendingRunOptions(null); 
+                                setIsPasswordDialogOpen(true);
+                            }}
+                        >
+                            {hasPassword ? (
+                                <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
+                            ) : (
+                                <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
+                            )}
+                        </Button>
+                    </div>
+                )}
+            </div>
+          </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground bg-muted/5">
              <div className="text-center max-w-lg">

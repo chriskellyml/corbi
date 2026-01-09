@@ -1,34 +1,32 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, RotateCcw } from "lucide-react";
+import { Plus, Trash2, RotateCcw, CornerDownRight, AlertCircle } from "lucide-react";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { cn } from "../../lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 
 interface PropertiesEditorProps {
-  content: string;
-  onChange: (newContent: string) => void;
+  baseContent: string;
+  overrideContent?: string | null; // If present, we are in "Override Mode"
+  onBaseChange: (newContent: string) => void;
+  onOverrideChange?: (key: string, value: string | undefined) => void; // undefined value = delete key
   title?: string;
   readOnly?: boolean;
-  originalContent?: string;
 }
 
-interface Property {
-  id: string;
+interface PropertyItem {
   key: string;
   value: string;
-  comment?: string;
-  isNew?: boolean;
+  source: 'base' | 'override' | 'new_base';
+  baseValue?: string;
+  originalValue?: string; // For dirty checking base
 }
 
-export function PropertiesEditor({ content, onChange, title, readOnly = false, originalContent }: PropertiesEditorProps) {
-  const [properties, setProperties] = useState<Property[]>([]);
-
-  // Parse original content to map for comparison
-  const originalMap = useMemo(() => {
-    if (originalContent === undefined) return null;
+const parseProperties = (content: string): Map<string, string> => {
     const map = new Map<string, string>();
-    originalContent.split('\n').forEach(line => {
+    if (!content) return map;
+    content.split('\n').forEach(line => {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith('#')) return;
         const eqIndex = trimmed.indexOf('=');
@@ -37,160 +35,256 @@ export function PropertiesEditor({ content, onChange, title, readOnly = false, o
         }
     });
     return map;
-  }, [originalContent]);
+};
 
-  useEffect(() => {
-    const lines = content.split('\n');
-    const parsed: Property[] = [];
+export function PropertiesEditor({ 
+  baseContent, 
+  overrideContent, 
+  onBaseChange, 
+  onOverrideChange, 
+  title, 
+  readOnly = false 
+}: PropertiesEditorProps) {
+  
+  // 1. Parse Data
+  const baseMap = useMemo(() => parseProperties(baseContent), [baseContent]);
+  const overrideMap = useMemo(() => overrideContent ? parseProperties(overrideContent) : null, [overrideContent]);
+  
+  // 2. Compute Display List
+  const displayItems = useMemo(() => {
+    const items: PropertyItem[] = [];
+    const processedKeys = new Set<string>();
+
+    // If in override mode, prioritize displaying global keys, then extra override keys
+    // If in normal mode, just display base keys
     
-    let currentComment: string | undefined = undefined;
-
-    lines.forEach((line, index) => {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        currentComment = undefined;
-        return;
-      }
-
-      if (trimmed.startsWith('#')) {
-        currentComment = trimmed.substring(1).trim();
-        return;
-      }
-
-      const eqIndex = trimmed.indexOf('=');
-      if (eqIndex !== -1) {
-        const key = trimmed.substring(0, eqIndex).trim();
-        const value = trimmed.substring(eqIndex + 1).trim();
-        parsed.push({
-          id: `prop-${index}-${Date.now()}`,
-          key,
-          value,
-          comment: currentComment
+    // A. Add Base Keys
+    baseMap.forEach((val, key) => {
+        processedKeys.add(key);
+        const isOverridden = overrideMap?.has(key);
+        
+        items.push({
+            key,
+            value: isOverridden ? overrideMap!.get(key)! : val,
+            source: isOverridden ? 'override' : 'base',
+            baseValue: val
         });
-        currentComment = undefined;
+    });
+
+    // B. Add Extra Override Keys (only if in override mode)
+    if (overrideMap) {
+        overrideMap.forEach((val, key) => {
+            if (!processedKeys.has(key)) {
+                // These are keys present in the job but NOT in the env
+                // Usually these are job-specific configs like URIS-MODULE, etc.
+                // We might want to filter out standard structural keys if we want this panel pure
+                // But for now, let's show them as overrides
+                 items.push({
+                    key,
+                    value: val,
+                    source: 'override',
+                    baseValue: undefined
+                });
+            }
+        });
+    }
+
+    return items.sort((a, b) => a.key.localeCompare(b.key));
+  }, [baseMap, overrideMap]);
+
+  const handleValueChange = (item: PropertyItem, newValue: string) => {
+      if (overrideMap) {
+          // Override Mode: Update the override (Job)
+          onOverrideChange?.(item.key, newValue);
+      } else {
+          // Base Mode: Update the base content (Env)
+          // We need to reconstruct the file string to preserve comments if possible, 
+          // or just simple rebuild if we don't care about comments in env props editor (the old one rebuilt it).
+          // The old editor logic reconstructed it. Let's reuse a simple reconstruct for now or improve.
+          // To keep it simple and robust:
+          updateBaseContent(item.key, newValue);
       }
-    });
-
-    setProperties(parsed);
-  }, [content]);
-
-  const updateProperty = (id: string, field: 'key' | 'value', value: string) => {
-    const updated = properties.map(p => 
-      p.id === id ? { ...p, [field]: value } : p
-    );
-    setProperties(updated);
-    reconstructContent(updated);
   };
 
-  const deleteProperty = (id: string) => {
-    const updated = properties.filter(p => p.id !== id);
-    setProperties(updated);
-    reconstructContent(updated);
+  const handleKeyChange = (oldKey: string, newKey: string) => {
+      if (overrideMap) return; // Can't rename keys in override mode easily without confusing logic
+      
+      // Base Mode Rename
+      // 1. Get value
+      const val = baseMap.get(oldKey) || "";
+      // 2. Remove old, Add new
+      let newContent = baseContent;
+      // Simple regex replace for the line? A bit risky. 
+      // Let's use the reconstruction approach used in the previous version for safety
+      const lines = baseContent.split('\n');
+      const newLines = lines.map(line => {
+          const trimmed = line.trim();
+          if (trimmed.startsWith(oldKey + '=')) {
+              return `${newKey}=${val}`;
+          }
+          return line;
+      });
+      onBaseChange(newLines.join('\n'));
   };
 
-  const addProperty = () => {
-    const newProp: Property = {
-      id: `new-${Date.now()}`,
-      key: 'NEW_KEY',
-      value: 'value',
-      isNew: true
-    };
-    const updated = [...properties, newProp];
-    setProperties(updated);
-    reconstructContent(updated);
+  const handleDelete = (key: string) => {
+      if (overrideMap) {
+          // In override mode, deleting means "Remove Override" (revert to base)
+          // OR if it's a unique override, delete it entirely.
+          onOverrideChange?.(key, undefined);
+      } else {
+          // Base Mode: Delete line
+          const lines = baseContent.split('\n');
+          const newLines = lines.filter(line => {
+             const trimmed = line.trim();
+             if (trimmed.startsWith('#')) return true;
+             return !trimmed.startsWith(key + '=');
+          });
+          onBaseChange(newLines.join('\n'));
+      }
   };
 
-  const reconstructContent = (props: Property[]) => {
-    const lines = props.map(p => {
-      let line = '';
-      if (p.comment) line += `# ${p.comment}\n`;
-      line += `${p.key}=${p.value}`;
-      return line;
-    });
-    onChange(lines.join('\n'));
+  const updateBaseContent = (key: string, value: string) => {
+      const lines = baseContent.split('\n');
+      let found = false;
+      const newLines = lines.map(line => {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('#') && trimmed.split('=')[0].trim() === key) {
+              found = true;
+              return `${key}=${value}`;
+          }
+          return line;
+      });
+      if (!found) newLines.push(`${key}=${value}`);
+      onBaseChange(newLines.join('\n'));
   };
+
+  const handleAddProperty = () => {
+      if (overrideMap) {
+          // Adding in override mode = adding a new key to the Job
+          const key = "NEW_VAR";
+          onOverrideChange?.(key, "value");
+      } else {
+          updateBaseContent("NEW_VAR", "value");
+      }
+  };
+
+  const isOverrideMode = !!overrideMap;
 
   return (
     <div className="flex flex-col h-full bg-background">
       {title && (
-        <div className="p-4 border-b border-border flex justify-between items-center bg-muted/20">
-          <h3 className="font-semibold text-sm">{title}</h3>
+        <div className="px-4 py-3 border-b border-border flex justify-between items-center bg-muted/20 shrink-0">
+          <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">{title}</h3>
           {!readOnly && (
-            <Button size="sm" variant="outline" onClick={addProperty} className="gap-1 h-8">
-              <Plus className="h-3 w-3" /> Add Property
+            <Button size="sm" variant="ghost" onClick={handleAddProperty} className="h-6 px-2 text-xs">
+              <Plus className="h-3 w-3 mr-1" /> Add
             </Button>
           )}
         </div>
       )}
       
-      <ScrollArea className="flex-1 p-4">
-        <div className="space-y-4 max-w-3xl">
-          {properties.length === 0 && (
-            <div className="text-center text-muted-foreground py-8 text-sm">
-              No properties defined.
-            </div>
-          )}
-          {properties.map((prop) => {
-            const isKeyDirty = originalMap && (!originalMap.has(prop.key));
-            const isValueDirty = originalMap && (originalMap.has(prop.key) && originalMap.get(prop.key) !== prop.value);
-            const isDirty = isKeyDirty || isValueDirty;
-
+      <ScrollArea className="flex-1 p-2">
+        <div className="space-y-2">
+          {displayItems.map((item) => {
+            // Filter out internal structural keys from display if desired, 
+            // but user might want to see them. Let's hide URIS-MODULE/PROCESS-MODULE/THREAD-COUNT 
+            // from the "Env" view if they are just standard job config, 
+            // BUT the prompt says "override the current selected environment values".
+            // So we mostly care about keys that EXIST in the base.
+            
+            // Visual State
+            const isOverridden = item.source === 'override' && item.baseValue !== undefined;
+            const isNewInJob = item.source === 'override' && item.baseValue === undefined;
+            
             return (
-              <div key={prop.id} className={cn(
-                  "group relative bg-card border rounded-lg p-3 shadow-sm transition-all",
-                  isDirty ? "border-amber-400 bg-amber-50/30" : "hover:border-primary/50"
+              <div key={item.key} className={cn(
+                  "group relative border rounded-md p-2 transition-all text-sm",
+                  isOverridden ? "bg-amber-50/50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800" : 
+                  isNewInJob ? "bg-blue-50/50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800" :
+                  "bg-card hover:border-primary/30"
               )}>
-                {prop.comment && (
-                  <div className="text-xs text-muted-foreground italic mb-2 ml-1">
-                    # {prop.comment}
-                  </div>
-                )}
-                <div className="flex gap-3 items-center">
+                <div className="flex gap-2 items-center">
+                  {/* Status Indicator */}
+                  <div className="w-1 shrink-0 self-stretch rounded-full my-1 bg-transparent group-hover:bg-muted" />
+                  
+                  {/* Key */}
                   <div className="flex-1 min-w-0">
-                     <label className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5 block ml-1">Key</label>
-                     <Input 
-                      value={prop.key}
-                      onChange={(e) => updateProperty(prop.id, 'key', e.target.value)}
-                      className={cn(
-                          "h-8 font-mono text-sm bg-muted/30 border-transparent focus:bg-background focus:border-input",
-                          isKeyDirty && "text-amber-700 font-bold"
-                      )}
-                      readOnly={readOnly}
-                     />
+                     <div className="flex items-center gap-1.5 mb-1">
+                        <Input 
+                            value={item.key}
+                            onChange={(e) => handleKeyChange(item.key, e.target.value)}
+                            className="h-6 text-xs font-mono font-bold bg-transparent border-transparent px-0 focus-visible:ring-0 focus-visible:bg-muted/30 w-full"
+                            readOnly={readOnly || isOverrideMode}
+                            title={item.key}
+                        />
+                     </div>
                   </div>
+
+                  {/* Value */}
                   <div className="flex-[2] min-w-0">
-                     <label className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5 block ml-1">Value</label>
-                     <Input 
-                      value={prop.value}
-                      onChange={(e) => updateProperty(prop.id, 'value', e.target.value)}
-                      className={cn(
-                          "h-8 font-mono text-sm",
-                          isValueDirty && "border-amber-400 focus-visible:ring-amber-400 bg-amber-50"
-                      )}
-                      readOnly={readOnly}
-                     />
+                     <div className="relative">
+                         <Input 
+                            value={item.value}
+                            onChange={(e) => handleValueChange(item, e.target.value)}
+                            className={cn(
+                                "h-7 text-xs font-mono",
+                                isOverridden && "text-amber-700 font-medium border-amber-300 dark:text-amber-400 dark:border-amber-800",
+                                isNewInJob && "text-blue-700 border-blue-300 dark:text-blue-400 dark:border-blue-800"
+                            )}
+                            readOnly={readOnly}
+                         />
+                         {isOverridden && (
+                             <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <AlertCircle className="h-3 w-3 text-amber-500 cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent side="left" className="text-xs">
+                                            <p>Overrides Global Value:</p>
+                                            <code className="bg-black/10 rounded px-1">{item.baseValue}</code>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                             </div>
+                         )}
+                     </div>
                   </div>
+
+                  {/* Actions */}
                   {!readOnly && (
-                    <div className="pt-4 flex items-center gap-1">
-                       {isDirty && originalMap && originalMap.has(prop.key) && (
-                           <Button
-                             variant="ghost"
-                             size="icon"
-                             className="h-8 w-8 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
-                             title="Reset value"
-                             onClick={() => updateProperty(prop.id, 'value', originalMap.get(prop.key) || "")}
-                           >
-                               <RotateCcw className="h-3 w-3" />
-                           </Button>
+                    <div className="flex items-center gap-1">
+                       {isOverrideMode ? (
+                           // Override Mode Actions
+                           <>
+                                {(isOverridden || isNewInJob) ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                        onClick={() => handleDelete(item.key)}
+                                        title={isOverridden ? "Revert to Global Value" : "Remove from Job"}
+                                    >
+                                        {isOverridden ? <RotateCcw className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
+                                    </Button>
+                                ) : (
+                                    // Not overridden yet (Inherited) -> Button to start editing is implicit by typing, 
+                                    // but we can add a visual cue if needed.
+                                    <div className="w-7" /> 
+                                )}
+                           </>
+                       ) : (
+                           // Base Mode Actions
+                           <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
+                            onClick={() => handleDelete(item.key)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                        )}
-                       <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => deleteProperty(prop.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
                     </div>
                   )}
                 </div>
