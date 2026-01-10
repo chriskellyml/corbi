@@ -57,7 +57,7 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
       
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium opacity-90">Environment:</span>
-        <div className="flex bg-black/20 p-1 rounded-lg gap-1">
+        <div className="flex bg-black/20 p-1.5 rounded-xl gap-2">
           {environments.map((env, idx) => {
              const isEnabled = jobPermissions ? jobPermissions[env] : undefined;
              const envColor = getEnvColor(env, idx, environments.length);
@@ -81,7 +81,7 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
                     <button
                         onClick={() => onEnvChange(env)}
                         className={cn(
-                            "relative px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 min-w-[60px] justify-center",
+                            "relative px-5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 min-w-[70px] justify-center",
                             isSelected 
                                 ? "bg-white text-black shadow-sm z-10 scale-105" 
                                 : "text-white/70 hover:bg-white/10 hover:text-white"
@@ -90,7 +90,7 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
                         {cleanName}
                         {isEnabled !== undefined && (
                             <div className={cn(
-                                "h-2 w-2 rounded-full ml-1",
+                                "h-2 w-2 rounded-full",
                                 isEnabled ? "bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.8)]" : "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"
                             )} />
                         )}

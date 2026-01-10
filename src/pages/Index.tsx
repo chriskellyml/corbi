@@ -738,7 +738,7 @@ export default function Index() {
                     )}
                 </div>
                 ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center bg-dot-pattern">
                     <div className="max-w-md">
                     <h3 className="text-xl font-semibold mb-2 text-foreground">
                         {selectedProject.name}
@@ -750,7 +750,7 @@ export default function Index() {
             </div>
 
             {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES */}
-            <div className="w-80 bg-background flex flex-col border-l border-border">
+            <div className="w-[480px] bg-muted/40 flex flex-col border-l border-border">
                 {/* 1. Env Properties Editor */}
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <PropertiesEditor 
@@ -836,7 +836,7 @@ export default function Index() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground bg-muted/5">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground bg-dot-pattern">
              <div className="text-center max-w-lg">
                 <MadeWithDyad />
              </div>
