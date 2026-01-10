@@ -361,6 +361,9 @@ app.post('/api/files/rename', async (req, res) => {
             newPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), newName);
             // Ensure dir exists
             await fs.mkdir(path.dirname(newPath), { recursive: true });
+        } else if (type === 'env') {
+            oldPath = safePath(ENV_DIR, oldName);
+            newPath = safePath(ENV_DIR, newName);
         } else {
             return res.status(400).json({ error: 'Invalid type' });
         }

@@ -93,10 +93,10 @@ export async function copyFile(
 }
 
 export async function renameFile(
-    projectId: string,
+    projectId: string | null,
     oldName: string,
     newName: string,
-    type: 'job' | 'script'
+    type: 'job' | 'script' | 'env'
 ): Promise<void> {
     const res = await fetch(`${API_BASE}/files/rename`, {
         method: 'POST',
