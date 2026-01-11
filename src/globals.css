@@ -102,10 +102,12 @@
 
 @layer utilities {
   .bg-dot-pattern {
-    background-image: radial-gradient(rgba(0,0,0,0.1) 1px, transparent 1px);
+    background-color: rgba(0,0,0,0.03); /* Slight darkening of background */
+    background-image: radial-gradient(rgba(0,0,0,0.3) 1px, transparent 1px); /* Significantly darker dots */
     background-size: 20px 20px;
   }
   .dark .bg-dot-pattern {
-    background-image: radial-gradient(rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-color: rgba(255,255,255,0.03);
+    background-image: radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px);
   }
 }
