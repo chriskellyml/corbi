@@ -672,8 +672,7 @@ export default function Index() {
 
         {/* MIDDLE COLUMN: EDITOR */}
         {selectedProject ? (
-          <>
-            <div className="flex-1 flex flex-col min-w-0 bg-muted/10 border-r border-border">
+          <div className="flex-1 flex flex-col min-w-0 bg-muted/10 border-r border-border">
                 {selection ? (
                 <div className="flex-1 flex flex-col overflow-hidden relative">
                     <div className="flex-1 flex flex-col overflow-hidden">
@@ -747,94 +746,7 @@ export default function Index() {
                     </div>
                 </div>
                 )}
-            </div>
-
-            {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES */}
-            <div className="w-[480px] bg-muted/40 flex flex-col border-l border-border">
-                {/* 1. Env Properties Editor */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    <PropertiesEditor 
-                        title={isJob ? `Overrides for ${environment}` : `Environment: ${environment}.props`}
-                        baseContent={envFiles[environment] || ""}
-                        overrideContent={isJob ? getCurrentFileContent() : null}
-                        onBaseChange={handleEnvFileChange}
-                        onOverrideChange={handleJobOverrideChange}
-                        readOnly={isReadOnly}
-                    />
-
-                    {/* Unsaved Env Changes Warning (Only in global mode) */}
-                    {!isJob && isEnvDirty && (
-                        <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
-                            <div className="text-xs text-amber-800 flex items-start gap-2">
-                                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                                <div>
-                                    <div className="font-semibold">Unsaved Changes</div>
-                                    <div className="opacity-90">Global environment changes must be saved to take effect.</div>
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <Button 
-                                    onClick={handleResetEnv} 
-                                    size="sm" 
-                                    variant="outline"
-                                    className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
-                                >
-                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                                </Button>
-                                <Button 
-                                    onClick={() => setIsEnvSaveDialogOpen(true)} 
-                                    size="sm" 
-                                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
-                                >
-                                    <Save className="mr-2 h-4 w-4" /> Save
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* 2. Authentication (Only visible when NO job is selected, per requirements) */}
-                {!isJob && (
-                    <div className="border-t bg-muted/10 p-4 shrink-0">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold text-sm flex items-center gap-2">
-                                <KeyRound className="h-4 w-4 text-muted-foreground" />
-                                Authentication
-                            </h3>
-                            <div className={cn(
-                                "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
-                                hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
-                            )}>
-                                {hasPassword ? "Authorized" : "Unauthorized"}
-                            </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground mb-3">
-                            User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
-                            <br/>
-                            {hasPassword 
-                                ? "Password stored in session memory." 
-                                : "No password currently stored for this session."
-                            }
-                        </div>
-                        <Button 
-                            variant={hasPassword ? "outline" : "secondary"} 
-                            size="sm" 
-                            className="w-full"
-                            onClick={() => {
-                                setPendingRunOptions(null); 
-                                setIsPasswordDialogOpen(true);
-                            }}
-                        >
-                            {hasPassword ? (
-                                <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
-                            ) : (
-                                <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
-                            )}
-                        </Button>
-                    </div>
-                )}
-            </div>
-          </>
+          </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground bg-dot-pattern">
              <div className="text-center max-w-lg">
@@ -842,6 +754,92 @@ export default function Index() {
              </div>
           </div>
         )}
+
+        {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES - ALWAYS VISIBLE */}
+        <div className="w-[480px] bg-muted/40 flex flex-col border-l border-border">
+            {/* 1. Env Properties Editor */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <PropertiesEditor 
+                    title={isJob ? `Overrides for ${environment}` : `Environment: ${environment}.props`}
+                    baseContent={envFiles[environment] || ""}
+                    overrideContent={isJob ? getCurrentFileContent() : null}
+                    onBaseChange={handleEnvFileChange}
+                    onOverrideChange={handleJobOverrideChange}
+                    readOnly={isReadOnly}
+                />
+
+                {/* Unsaved Env Changes Warning (Only in global mode) */}
+                {!isJob && isEnvDirty && (
+                    <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
+                        <div className="text-xs text-amber-800 flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                            <div>
+                                <div className="font-semibold">Unsaved Changes</div>
+                                <div className="opacity-90">Global environment changes must be saved to take effect.</div>
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button 
+                                onClick={handleResetEnv} 
+                                size="sm" 
+                                variant="outline"
+                                className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
+                            >
+                                <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                            </Button>
+                            <Button 
+                                onClick={() => setIsEnvSaveDialogOpen(true)} 
+                                size="sm" 
+                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                            >
+                                <Save className="mr-2 h-4 w-4" /> Save
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 2. Authentication (Only visible when NO job is selected, per requirements) */}
+            {!isJob && (
+                <div className="border-t bg-muted/10 p-4 shrink-0">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                            <KeyRound className="h-4 w-4 text-muted-foreground" />
+                            Authentication
+                        </h3>
+                        <div className={cn(
+                            "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
+                            hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
+                        )}>
+                            {hasPassword ? "Authorized" : "Unauthorized"}
+                        </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mb-3">
+                        User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
+                        <br/>
+                        {hasPassword 
+                            ? "Password stored in session memory." 
+                            : "No password currently stored for this session."
+                        }
+                    </div>
+                    <Button 
+                        variant={hasPassword ? "outline" : "secondary"} 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => {
+                            setPendingRunOptions(null); 
+                            setIsPasswordDialogOpen(true);
+                        }}
+                    >
+                        {hasPassword ? (
+                            <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
+                        ) : (
+                            <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
+                        )}
+                    </Button>
+                </div>
+            )}
+        </div>
       </div>
       
       <PasswordDialog 
