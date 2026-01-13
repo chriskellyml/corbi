@@ -173,7 +173,7 @@ export function ProjectSidebar({
                     onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
                     onMoveUp={index > 0 ? () => onMoveFile(selectedProject.id, job.name, 'up', 'job') : undefined}
                     onMoveDown={index < sortedJobs.length - 1 ? () => onMoveFile(selectedProject.id, job.name, 'down', 'job') : undefined}
-                    statusIndicator={!isEnabled ? <Lock className="h-2.5 w-2.5 text-muted-foreground/50 ml-1.5" /> : undefined}
+                    statusIndicator={!isEnabled ? <Lock className="h-2.5 w-2.5 ml-1.5 opacity-50" /> : undefined}
                     disabled={!isEnabled}
                     />
                  );
@@ -287,23 +287,30 @@ function FileItem({
   return (
     <div
       className={cn(
-        "group w-full flex items-center gap-2 px-6 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground border-l-2 border-transparent relative cursor-pointer",
-        isSelected && "bg-accent text-accent-foreground border-primary"
+        "group w-full flex items-center gap-2 px-6 py-2 text-sm transition-all border-l-4 border-transparent relative cursor-pointer",
+        !isSelected && "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:border-sidebar-accent-foreground/10 text-muted-foreground",
+        isSelected && "bg-primary text-primary-foreground border-l-blue-500 font-medium shadow-sm"
       )}
       onClick={onClick}
     >
-      <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
-      <span className={cn("truncate flex-1", disabled && "opacity-70")} title={name}>{displayName}</span>
-      {statusIndicator}
+      <Icon className={cn("h-4 w-4 shrink-0 transition-colors", isSelected ? "text-primary-foreground" : iconColor)} />
+      <span className={cn("truncate flex-1", disabled && !isSelected && "opacity-70")} title={name}>{displayName}</span>
+      {statusIndicator && <div className={cn(isSelected ? "text-primary-foreground/70" : "")}>{statusIndicator}</div>}
       
       {/* Actions (visible on hover) */}
-      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 bg-accent rounded-sm shadow-sm pl-2">
+      <div className={cn(
+        "flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 rounded-sm shadow-sm pl-2",
+        isSelected ? "bg-primary text-primary-foreground" : "bg-sidebar-accent"
+      )}>
           {type === 'job' && !disabled && (
               <>
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100" 
+                    className={cn(
+                        "h-6 w-6", 
+                        isSelected ? "text-primary-foreground hover:bg-primary-foreground/10" : "text-green-600 hover:text-green-700 hover:bg-green-100"
+                    )}
                     onClick={(e) => { e.stopPropagation(); onRun(); }}
                     title="Run Job"
                   >
@@ -318,7 +325,11 @@ function FileItem({
                 <Button 
                     variant="ghost" 
                     size="icon" 
-                    className={cn("h-3 w-6 hover:bg-primary/10", !onMoveUp && "invisible")}
+                    className={cn(
+                        "h-3 w-6",
+                        isSelected ? "text-primary-foreground/70 hover:bg-primary-foreground/10" : "hover:bg-primary/10",
+                        !onMoveUp && "invisible"
+                    )}
                     onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }}
                     title="Move Up"
                 >
@@ -327,7 +338,11 @@ function FileItem({
                 <Button 
                     variant="ghost" 
                     size="icon" 
-                    className={cn("h-3 w-6 hover:bg-primary/10", !onMoveDown && "invisible")}
+                    className={cn(
+                        "h-3 w-6",
+                        isSelected ? "text-primary-foreground/70 hover:bg-primary-foreground/10" : "hover:bg-primary/10",
+                        !onMoveDown && "invisible"
+                    )}
                     onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }}
                     title="Move Down"
                 >
@@ -340,7 +355,10 @@ function FileItem({
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10" 
+                className={cn(
+                    "h-6 w-6",
+                    isSelected ? "text-primary-foreground hover:bg-primary-foreground/10 hover:text-red-300" : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                )}
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
                 title="Delete File"
               >
@@ -350,7 +368,7 @@ function FileItem({
           
           <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="icon" className={cn("h-6 w-6", isSelected && "text-primary-foreground hover:bg-primary-foreground/10")} onClick={(e) => e.stopPropagation()}>
                     <MoreHorizontal className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
@@ -482,11 +500,11 @@ function RunFileRow({ name, icon: Icon, isSelected, onClick, indent }: any) {
       onClick={onClick}
       className={cn(
         "w-full flex items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-left rounded-sm",
-        isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+        isSelected && "bg-primary/90 text-primary-foreground font-medium",
         indent && "pl-4"
       )}
     >
-      <Icon className="h-3 w-3 shrink-0 opacity-70" />
+      <Icon className={cn("h-3 w-3 shrink-0", isSelected ? "text-primary-foreground/90" : "opacity-70")} />
       <span className="truncate">{name}</span>
     </button>
   );

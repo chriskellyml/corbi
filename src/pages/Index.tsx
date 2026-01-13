@@ -117,7 +117,21 @@ export default function Index() {
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
-    setSelection(null);
+    
+    // Auto-select first job
+    if (id) {
+        const project = projects.find(p => p.id === id);
+        if (project && project.jobs.length > 0) {
+             const sortedJobs = [...project.jobs].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+             if (sortedJobs.length > 0) {
+                 setSelection({ kind: 'source', type: 'job', name: sortedJobs[0].name });
+                 return;
+             }
+        }
+        setSelection(null);
+    } else {
+        setSelection(null);
+    }
   };
 
   const handleCreateJob = (projectId: string) => {
