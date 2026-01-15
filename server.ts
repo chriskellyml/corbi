@@ -161,62 +161,76 @@ app.get('/api/projects', async (req, res) => {
          scripts = await getScriptsRecursively(scriptsDir, scriptsDir);
       }
 
-      // Get Runs
+      // Get Runs (Nested Structure: runs/<project>/<env>/<timestamp>)
       const pRunsDir = path.join(RUNS_DIR, pName);
       let runs = [];
+      
       if (existsSync(pRunsDir)) {
-          const runDirs = (await fs.readdir(pRunsDir)).reverse(); // Newest first by name usually
-          runs = await Promise.all(runDirs.map(async rId => {
-              const rPath = path.join(pRunsDir, rId);
-              if (!(await fs.stat(rPath)).isDirectory()) return null;
+          // 1. Get Environment Directories
+          const envDirs = (await fs.readdir(pRunsDir, { withFileTypes: true }))
+              .filter(d => d.isDirectory())
+              .map(d => d.name);
 
-              // Read run details
-              const envFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.props'));
-              const envName = envFiles.length > 0 ? envFiles[0].replace('.props', '') : 'UNKNOWN';
+          for (const envName of envDirs) {
+              const envRunsPath = path.join(pRunsDir, envName);
+              // 2. Get Timestamp Directories per Env
+              const runTimestamps = (await fs.readdir(envRunsPath)).filter(f => !f.startsWith('.'));
               
-              // Read options
-              let options = '';
-              try { options = await fs.readFile(path.join(rPath, 'job.options'), 'utf-8'); } catch(e) {}
+              const envRuns = await Promise.all(runTimestamps.map(async (rTimestamp) => {
+                  const rPath = path.join(envRunsPath, rTimestamp);
+                  if (!(await fs.stat(rPath)).isDirectory()) return null;
+
+                  // Read options
+                  let options = '';
+                  try { options = await fs.readFile(path.join(rPath, 'job.options'), 'utf-8'); } catch(e) {}
+                  
+                  // Read export
+                  let exportContent = '';
+                  try { exportContent = await fs.readFile(path.join(rPath, 'export.csv'), 'utf-8'); } catch(e) {}
+
+                  // Logs
+                  const logs = [];
+                  const logFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.log'));
+                  for (const lf of logFiles) {
+                      logs.push({ name: lf, content: await fs.readFile(path.join(rPath, lf), 'utf-8') });
+                  }
+
+                  // Scripts (snapshot)
+                  const runScriptsDir = path.join(rPath, 'scripts');
+                  let runScripts = [];
+                  if (existsSync(runScriptsDir)) {
+                      runScripts = await getScriptsRecursively(runScriptsDir, runScriptsDir);
+                  }
+
+                  return {
+                      // We make ID unique by combining env and timestamp, though timestamp is usually unique enough,
+                      // the UI filters by env so collision isn't visible, but for keys it's safer.
+                      id: `${envName}/${rTimestamp}`,
+                      timestamp: rTimestamp,
+                      isDryRun: options.includes('DRY-RUN=true'),
+                      environments: [{
+                          name: envName,
+                          options,
+                          export: exportContent,
+                          logs,
+                          scripts: runScripts
+                      }]
+                  };
+              }));
               
-              // Read export
-              let exportContent = '';
-              try { exportContent = await fs.readFile(path.join(rPath, 'export.csv'), 'utf-8'); } catch(e) {}
-
-              // Logs
-              const logs = [];
-              const logFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.log'));
-              for (const lf of logFiles) {
-                  logs.push({ name: lf, content: await fs.readFile(path.join(rPath, lf), 'utf-8') });
-              }
-
-              // Scripts (snapshot)
-              const runScriptsDir = path.join(rPath, 'scripts');
-              let runScripts = [];
-              if (existsSync(runScriptsDir)) {
-                  runScripts = await getScriptsRecursively(runScriptsDir, runScriptsDir);
-              }
-
-              return {
-                  id: rId,
-                  timestamp: rId,
-                  isDryRun: options.includes('DRY-RUN=true'), // Simple heuristic
-                  environments: [{
-                      name: envName,
-                      options,
-                      export: exportContent,
-                      logs,
-                      scripts: runScripts
-                  }]
-              };
-          }));
+              runs = runs.concat(envRuns.filter(Boolean));
+          }
       }
+      
+      // Sort runs by timestamp descending (newest first)
+      runs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
       return {
         id: pName,
         name: pName,
         jobs,
         scripts,
-        runs: runs.filter(Boolean)
+        runs
       };
     }));
 
@@ -403,7 +417,9 @@ app.post('/api/run', async (req, res) => {
     
     try {
         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-        const runDir = path.join(RUNS_DIR, projectId, timestamp);
+        
+        // Updated Structure: runs/<project>/<env>/<timestamp>
+        const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
         
         await fs.mkdir(runDir, { recursive: true });
 
@@ -493,12 +509,23 @@ app.post('/api/run', async (req, res) => {
     }
 });
 
-// DELETE /api/run/:projectId/:runId
-app.delete('/api/run/:projectId/:runId', async (req, res) => {
-    const { projectId, runId } = req.params;
+// DELETE /api/run/:projectId/:envName/:runId
+// Updated to accept envName for directory resolution
+app.delete('/api/run/:projectId/:envName/:runId', async (req, res) => {
+    const { projectId, envName, runId } = req.params;
     try {
-        const runPath = safePath(path.join(RUNS_DIR, projectId), runId);
+        const runPath = safePath(path.join(RUNS_DIR, projectId, envName), runId);
         await fs.rm(runPath, { recursive: true, force: true });
+        
+        // Optional: Clean up env folder if empty
+        try {
+            const envPath = path.dirname(runPath);
+            const files = await fs.readdir(envPath);
+            if (files.length === 0) {
+                await fs.rmdir(envPath);
+            }
+        } catch(e) { /* ignore */ }
+
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });

@@ -159,8 +159,8 @@ export async function createRun(
   return data.runId;
 }
 
-export async function deleteRun(projectId: string, runId: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/run/${projectId}/${runId}`, {
+export async function deleteRun(projectId: string, envName: string, runId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}`, {
         method: 'DELETE'
     });
     if (!res.ok) throw new Error("Failed to delete run");

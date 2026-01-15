@@ -432,20 +432,23 @@ export default function Index() {
      }
   };
 
-  const handleDeleteRun = async (projectId: string, runId: string) => {
+  const handleDeleteRun = async (projectId: string, envName: string, runId: string) => {
     try {
-        await deleteRun(projectId, runId);
+        await deleteRun(projectId, envName, runId);
         setProjects(prev => prev.map(p => {
           if (p.id !== projectId) return p;
+          // Filter out by checking matching environment AND matching timestamp
           return {
             ...p,
-            runs: p.runs.filter(r => r.id !== runId)
+            runs: p.runs.filter(r => !(r.timestamp === runId && r.environments[0].name === envName))
           };
         }));
         toast.success("Run deleted successfully");
         if (selection?.kind === 'run' && selection.runId === runId) {
           setSelection(null);
         }
+        // Force reload to ensure everything is consistent
+        loadData();
     } catch (err) {
         toast.error("Failed to delete run");
     }
@@ -568,6 +571,8 @@ export default function Index() {
       }
       return selectedProject.scripts.find(s => s.name === selection.name)?.content || "";
     } else {
+      // Find Run
+      // ID is now composite potentially, but selection.runId stores whatever the backend returned (composite or simple).
       const run = selectedProject.runs.find(r => r.id === selection.runId);
       const env = run?.environments.find(e => e.name === selection.envName);
       if (!env) return "Error: Environment not found";

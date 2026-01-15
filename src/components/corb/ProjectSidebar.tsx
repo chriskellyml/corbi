@@ -20,7 +20,7 @@ interface ProjectSidebarProps {
   onSelectProject: (id: string | null) => void;
   selection: SelectionType | null;
   onSelectFile: (selection: SelectionType) => void;
-  onDeleteRun: (projectId: string, runId: string) => void;
+  onDeleteRun: (projectId: string, envName: string, runId: string) => void;
   // New props for source management
   onCreateJob: (projectId: string) => void;
   onRunJob: (jobName: string) => void;
@@ -87,6 +87,11 @@ export function ProjectSidebar({
   const sortedJobs = selectedProject 
     ? [...selectedProject.jobs].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) 
     : [];
+
+  // Filter runs for display based on CURRENT ENVIRONMENT
+  const filteredRuns = selectedProject?.runs.filter(r => 
+    r.environments.some(e => e.name === currentEnv)
+  ) || [];
 
   // PROJECT LIST VIEW
   if (!selectedProject) {
@@ -232,15 +237,15 @@ export function ProjectSidebar({
           <AccordionItem value="runs" className="border-b-0">
             <AccordionTrigger className="px-4 py-2 hover:no-underline hover:bg-muted/50 text-sm font-semibold uppercase text-muted-foreground">
               <span className="flex items-center gap-2">
-                <History className="h-4 w-4" /> Runs
+                <History className="h-4 w-4" /> Runs <span className="text-xs font-normal opacity-70">({currentEnv})</span>
               </span>
             </AccordionTrigger>
             <AccordionContent className="pt-1 pb-4">
-              {selectedProject.runs.length === 0 ? (
-                <div className="px-8 py-2 text-xs text-muted-foreground italic">No runs recorded.</div>
+              {filteredRuns.length === 0 ? (
+                <div className="px-8 py-2 text-xs text-muted-foreground italic">No runs for {currentEnv}.</div>
               ) : (
                 <div className="space-y-1">
-                  {selectedProject.runs.map((run) => (
+                  {filteredRuns.map((run) => (
                     <RunItem 
                       key={run.id} 
                       run={run} 
@@ -395,8 +400,10 @@ function RunItem({ run, projectId, selection, onSelectFile, onDeleteRun }: {
   projectId: string,
   selection: SelectionType | null, 
   onSelectFile: (s: SelectionType) => void,
-  onDeleteRun: (pid: string, rid: string) => void
+  onDeleteRun: (pid: string, env: string, rid: string) => void
 }) {
+  const env = run.environments[0]; // Assuming one env per run entry now
+  
   return (
     <div className="px-2">
       <Accordion type="single" collapsible className="w-full">
@@ -424,69 +431,62 @@ function RunItem({ run, projectId, selection, onSelectFile, onDeleteRun }: {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={() => onDeleteRun(projectId, run.id)}>Delete</AlertDialogAction>
+                    <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={() => onDeleteRun(projectId, env.name, run.timestamp)}>Delete</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
              </AlertDialog>
           </div>
           
           <AccordionContent className="pl-4 pt-1 pb-1">
-            {/* Environments */}
-            {run.environments.map(env => (
-               <div key={env.name} className="pl-2 border-l border-border ml-1.5">
-                  <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 flex items-center gap-1">
-                    <Folder className="h-3 w-3" /> {env.name}
-                  </div>
-                  
-                  {/* Root Files */}
-                  <RunFileRow 
+            <div className="pl-2 border-l border-border ml-1.5">
+                {/* Root Files */}
+                <RunFileRow 
                     name="job.options" 
                     icon={FileText} 
                     isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.fileName === 'job.options'}
                     onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'root', fileName: 'job.options' })}
-                  />
-                  <RunFileRow 
+                />
+                <RunFileRow 
                     name="export.csv" 
                     icon={File} 
                     isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.fileName === 'export.csv'}
                     onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'root', fileName: 'export.csv' })}
-                  />
+                />
 
-                  {/* Logs Folder */}
-                  <div className="mt-1">
+                {/* Logs Folder */}
+                <div className="mt-1">
                     <div className="text-[10px] font-semibold text-muted-foreground/70 px-2 py-0.5 flex items-center gap-1">
-                       <Folder className="h-3 w-3" /> logs
+                        <Folder className="h-3 w-3" /> logs
                     </div>
                     {env.logs.map(log => (
-                      <RunFileRow 
+                        <RunFileRow 
                         key={log.name}
                         name={log.name} 
                         icon={FileText} 
                         indent
                         isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.category === 'logs' && selection.fileName === log.name}
                         onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'logs', fileName: log.name })}
-                      />
+                        />
                     ))}
-                  </div>
+                </div>
 
-                  {/* Scripts Folder */}
-                  <div className="mt-1">
+                {/* Scripts Folder */}
+                <div className="mt-1">
                     <div className="text-[10px] font-semibold text-muted-foreground/70 px-2 py-0.5 flex items-center gap-1">
-                       <Folder className="h-3 w-3" /> scripts
+                        <Folder className="h-3 w-3" /> scripts
                     </div>
                     {env.scripts.map(script => (
-                      <RunFileRow 
+                        <RunFileRow 
                         key={script.name}
                         name={script.name} 
                         icon={FileCode} 
                         indent
                         isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.category === 'scripts' && selection.fileName === script.name}
                         onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'scripts', fileName: script.name })}
-                      />
+                        />
                     ))}
-                  </div>
-               </div>
-            ))}
+                </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
