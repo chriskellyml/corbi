@@ -14,10 +14,10 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Setup directories
-const PROJECTS_DIR = path.join(WORKING_DIR, 'projects');
+const PROJECTS_DIR = path.join(WORKING_DIR, 'src', 'projects');
 const ENV_DIR = path.join(WORKING_DIR, 'env');
 const RUNS_DIR = path.join(WORKING_DIR, 'runs');
-const SUPPORT_DIR = path.join(WORKING_DIR, 'support');
+const SUPPORT_DIR = path.join(WORKING_DIR, 'src', 'support');
 const URIS_DIR = path.join(SUPPORT_DIR, 'uris');
 const PROCESS_DIR = path.join(SUPPORT_DIR, 'process');
 const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
@@ -28,9 +28,9 @@ if (!existsSync(WORKING_DIR)) {
   console.warn(`WARNING: Working directory ${WORKING_DIR} does not exist. Creating it for testing purposes.`);
   try {
       mkdirSync(WORKING_DIR, { recursive: true });
-      mkdirSync(PROJECTS_DIR);
-      mkdirSync(ENV_DIR);
-      mkdirSync(RUNS_DIR);
+      mkdirSync(PROJECTS_DIR, { recursive: true });
+      mkdirSync(ENV_DIR, { recursive: true });
+      mkdirSync(RUNS_DIR, { recursive: true });
   } catch (e) {
       console.error("Failed to create working directory:", e);
   }
@@ -156,14 +156,14 @@ app.get('/api/projects', async (req, res) => {
 
       // Get Scripts (Recursive)
       const scriptsDir = path.join(pPath, 'scripts');
-      let scripts = [];
+      let scripts: any[] = [];
       if (existsSync(scriptsDir)) {
          scripts = await getScriptsRecursively(scriptsDir, scriptsDir);
       }
 
       // Get Runs (Nested Structure: runs/<project>/<env>/<timestamp>)
       const pRunsDir = path.join(RUNS_DIR, pName);
-      let runs = [];
+      let runs: any[] = [];
       
       if (existsSync(pRunsDir)) {
           // 1. Get Environment Directories
@@ -189,7 +189,7 @@ app.get('/api/projects', async (req, res) => {
                   try { exportContent = await fs.readFile(path.join(rPath, 'export.csv'), 'utf-8'); } catch(e) {}
 
                   // Logs
-                  const logs = [];
+                  const logs: any[] = [];
                   const logFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.log'));
                   for (const lf of logFiles) {
                       logs.push({ name: lf, content: await fs.readFile(path.join(rPath, lf), 'utf-8') });
@@ -197,7 +197,7 @@ app.get('/api/projects', async (req, res) => {
 
                   // Scripts (snapshot)
                   const runScriptsDir = path.join(rPath, 'scripts');
-                  let runScripts = [];
+                  let runScripts: any[] = [];
                   if (existsSync(runScriptsDir)) {
                       runScripts = await getScriptsRecursively(runScriptsDir, runScriptsDir);
                   }
@@ -418,8 +418,11 @@ app.post('/api/run', async (req, res) => {
     try {
         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
         
-        // Updated Structure: runs/<project>/<env>/<timestamp>
-        const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
+        // Strip numeric prefix from envName for the directory (e.g. "02-TEST" -> "TEST")
+        const cleanEnvName = envName.replace(/^\d+-/, '');
+
+        // Updated Structure: runs/<project>/<clean_env>/<timestamp>
+        const runDir = path.join(RUNS_DIR, projectId, cleanEnvName, timestamp);
         
         await fs.mkdir(runDir, { recursive: true });
 
