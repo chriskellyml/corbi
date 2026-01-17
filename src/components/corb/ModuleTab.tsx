@@ -20,7 +20,7 @@ interface ModuleTabProps {
     onRefreshData?: () => void;
 }
 
-type SourceType = 'project' | 'support' | 'txt';
+type SourceType = 'project' | 'support' | 'txt' | 'server';
 
 export function ModuleTab({ type, currentValue, onChange, project, onRefreshData }: ModuleTabProps) {
     const [sourceType, setSourceType] = useState<SourceType>('project');
@@ -48,13 +48,17 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
 
     useEffect(() => {
         // Determine initial source type from currentValue
-        if (!currentValue) {
+        const cleanVal = currentValue?.replace('|ADHOC', '') || '';
+
+        if (!cleanVal) {
             setSourceType('project');
-        } else if (currentValue.startsWith('scripts/')) {
-             if (currentValue.endsWith('.txt')) setSourceType('txt');
+        } else if (cleanVal.startsWith('scripts/')) {
+             if (cleanVal.endsWith('.txt')) setSourceType('txt');
              else setSourceType('project');
-        } else {
+        } else if (cleanVal.startsWith('support/')) {
              setSourceType('support');
+        } else {
+             setSourceType('server');
         }
 
         loadSupportFiles();
@@ -63,11 +67,15 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     // Watch currentValue to update source type if changed externally (e.g. initial load)
     useEffect(() => {
         if (!currentValue) return;
-        if (currentValue.startsWith('scripts/')) {
-             if (currentValue.endsWith('.txt') && sourceType !== 'txt') setSourceType('txt');
-             else if (!currentValue.endsWith('.txt') && sourceType !== 'project') setSourceType('project');
-        } else {
+        const cleanVal = currentValue.replace('|ADHOC', '');
+        
+        if (cleanVal.startsWith('scripts/')) {
+             if (cleanVal.endsWith('.txt') && sourceType !== 'txt') setSourceType('txt');
+             else if (!cleanVal.endsWith('.txt') && sourceType !== 'project') setSourceType('project');
+        } else if (cleanVal.startsWith('support/')) {
              if (sourceType !== 'support') setSourceType('support');
+        } else {
+             if (sourceType !== 'server') setSourceType('server');
         }
     }, [currentValue]);
 
@@ -83,10 +91,17 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     }, [currentValue, sourceType]); 
 
     const loadContent = async () => {
+        if (sourceType === 'server') {
+            setContent("");
+            return;
+        }
+
         setIsLoading(true);
         try {
+            const cleanVal = currentValue?.replace('|ADHOC', '') || '';
+
             if (sourceType === 'project' || sourceType === 'txt') {
-                 const nameToFind = currentValue.replace(/^scripts\//, '');
+                 const nameToFind = cleanVal.replace(/^scripts\//, '');
                  const script = project.scripts.find(s => s.name === nameToFind);
                  if (script) {
                      setContent(script.content);
@@ -96,8 +111,8 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                  }
             } else {
                  // Support
-                 if (currentValue && !currentValue.startsWith('scripts/')) {
-                     const filename = currentValue.split('/').pop() || currentValue;
+                 if (cleanVal && !cleanVal.startsWith('scripts/')) {
+                     const filename = cleanVal.split('/').pop() || cleanVal;
                      const text = await fetchSupportContent(type, filename);
                      setContent(text);
                      setOriginalContent(text);
@@ -115,17 +130,21 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
 
     const getCleanSelection = () => {
         if (!currentValue) return "";
-        if (currentValue.startsWith('scripts/')) {
-            return currentValue.replace(/^scripts\//, '');
+        let val = currentValue.replace('|ADHOC', '');
+        
+        if (sourceType === 'server') return val;
+
+        if (val.startsWith('scripts/')) {
+            return val.replace(/^scripts\//, '');
         }
-        return currentValue.replace(`support/${type}/`, '');
+        return val.replace(`support/${type}/`, '');
     };
 
     const isDirty = content !== originalContent;
 
     // Auto-save Effect for Project Files
     useEffect(() => {
-        if (sourceType === 'support') return;
+        if (sourceType === 'support' || sourceType === 'server') return;
         if (!isDirty) return;
 
         const timer = setTimeout(async () => {
@@ -162,16 +181,19 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
         // Reset to first available item or empty when switching tabs
         if (val === 'project') {
              const first = projectScripts[0];
-             if (first) onChange(`scripts/${first.name}`);
+             if (first) onChange(`scripts/${first.name}|ADHOC`);
              else onChange("");
         } else if (val === 'txt') {
              const first = txtFiles[0];
-             if (first) onChange(`scripts/${first.name}`);
+             if (first) onChange(`scripts/${first.name}|ADHOC`);
+             else onChange("");
+        } else if (val === 'support') {
+             const first = supportFiles[0];
+             if (first) onChange(`support/${type}/${first}|ADHOC`);
              else onChange("");
         } else {
-             const first = supportFiles[0];
-             if (first) onChange(`support/${type}/${first}`);
-             else onChange("");
+             // Server - default to empty or keep previous if it looked like a server path?
+             onChange("");
         }
     };
 
@@ -183,9 +205,12 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
 
         // val is the name relative to category
         if (sourceType === 'project' || sourceType === 'txt') {
-            onChange(`scripts/${val}`);
+            onChange(`scripts/${val}|ADHOC`);
+        } else if (sourceType === 'support') {
+            onChange(`support/${type}/${val}|ADHOC`);
         } else {
-            onChange(`support/${type}/${val}`);
+            // Server - val is the full path typed by user
+            onChange(val);
         }
     };
 
@@ -243,7 +268,7 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                  if (onRefreshData) onRefreshData(); // Refresh project data
                  
                  // Select it
-                 onChange(`scripts/${relativePath}`);
+                 onChange(`scripts/${relativePath}|ADHOC`);
             } else {
                  // Support
                  const supportType = type === 'uris' ? 'support-uris' : 'support-process';
@@ -251,7 +276,7 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                  loadSupportFiles(); // Refresh support list
                  
                  // Select it
-                 onChange(`support/${type}/${newFileName}`);
+                 onChange(`support/${type}/${newFileName}|ADHOC`);
             }
             
             toast.success("File created");
@@ -280,35 +305,50 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                         <RadioGroupItem value="support" id="r-support" />
                         <Label htmlFor="r-support">Support Script</Label>
                     </div>
+                    <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="server" id="r-server" />
+                        <Label htmlFor="r-server">Server Script</Label>
+                    </div>
                 </RadioGroup>
 
                 <div className="flex gap-2 items-center">
                     <div className="flex-1 flex gap-2">
-                        <Select value={getCleanSelection()} onValueChange={handleFileSelect}>
-                            <SelectTrigger className="w-full bg-background">
-                                <SelectValue placeholder="Select file..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {sourceType === 'project' && projectScripts.map(s => (
-                                    <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>
-                                ))}
-                                {sourceType === 'txt' && txtFiles.map(s => (
-                                    <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>
-                                ))}
-                                {sourceType === 'support' && supportFiles.map(s => (
-                                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Button 
-                            variant="outline" 
-                            size="icon" 
-                            onClick={() => setIsCreateDialogOpen(true)} 
-                            title="Create New File"
-                            className="shrink-0"
-                        >
-                            <Plus className="h-4 w-4" />
-                        </Button>
+                        {sourceType === 'server' ? (
+                            <Input 
+                                placeholder="Enter server module path (e.g. /marklogic.rest.transform/my-lib/test.xqy)"
+                                value={currentValue}
+                                onChange={(e) => handleFileSelect(e.target.value)}
+                                className="font-mono text-xs bg-background"
+                            />
+                        ) : (
+                            <>
+                                <Select value={getCleanSelection()} onValueChange={handleFileSelect}>
+                                    <SelectTrigger className="w-full bg-background">
+                                        <SelectValue placeholder="Select file..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {sourceType === 'project' && projectScripts.map(s => (
+                                            <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>
+                                        ))}
+                                        {sourceType === 'txt' && txtFiles.map(s => (
+                                            <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>
+                                        ))}
+                                        {sourceType === 'support' && supportFiles.map(s => (
+                                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <Button 
+                                    variant="outline" 
+                                    size="icon" 
+                                    onClick={() => setIsCreateDialogOpen(true)} 
+                                    title="Create New File"
+                                    className="shrink-0"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </>
+                        )}
                     </div>
                     
                     {/* Saving Indicator */}
@@ -341,11 +381,17 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
                         <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                 ) : (
-                    <ScriptEditor 
-                        fileName={getCleanSelection()} 
-                        content={content} 
-                        onChange={setContent}
-                    />
+                    sourceType === 'server' ? (
+                        <div className="flex items-center justify-center h-full text-muted-foreground text-sm italic">
+                            Server scripts cannot be previewed.
+                        </div>
+                    ) : (
+                        <ScriptEditor 
+                            fileName={getCleanSelection()} 
+                            content={content} 
+                            onChange={setContent}
+                        />
+                    )
                 )}
             </div>
 
