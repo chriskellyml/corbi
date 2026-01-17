@@ -67,7 +67,10 @@ export function ProjectSidebar({
                   // The value in job file typically includes 'scripts/' prefix for project files
                   // We need to strip it to match script.name which is relative to scripts/
                   if (rawVal.startsWith('scripts/')) {
-                      linkedScripts.add(rawVal.replace(/^scripts\//, ''));
+                      // Strip 'scripts/' prefix AND '|ADHOC' suffix to match the actual file name
+                      let scriptName = rawVal.replace(/^scripts\//, '');
+                      scriptName = scriptName.replace('|ADHOC', '');
+                      linkedScripts.add(scriptName);
                   }
               }
           });
