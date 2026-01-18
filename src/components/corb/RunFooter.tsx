@@ -3,7 +3,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Play, PlayCircle, Lock } from "lucide-react";
+import { Play, PlayCircle, Lock, RefreshCcw, ArrowRight } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export interface RunOptions {
@@ -17,30 +17,41 @@ export interface RunOptions {
   customProcessModule?: string;
 }
 
+export type RunAction = 'dry' | 'retry-dry' | 'wet';
+
 interface RunFooterProps {
   jobName: string;
-  onRun: (options: RunOptions) => void;
+  onRun: (action: RunAction, options: RunOptions) => void;
   disabled?: boolean;
+  hasLastRun: boolean;
 }
 
-export function RunFooter({ jobName, onRun, disabled }: RunFooterProps) {
+export function RunFooter({ jobName, onRun, disabled, hasLastRun }: RunFooterProps) {
   const [noLimit, setNoLimit] = useState(false);
   const [limit, setLimit] = useState("10");
-  const [dryRun, setDryRun] = useState(true);
   const [threadCount, setThreadCount] = useState("4");
 
-  const handleRun = () => {
-    if (disabled) return;
-    onRun({
-      limit: noLimit ? null : parseInt(limit) || 10,
-      dryRun,
-      threadCount: parseInt(threadCount) || 4,
-      urisMode: 'default',
-      urisFile: "",
-      customUrisModule: "",
-      processMode: 'default',
-      customProcessModule: ""
-    });
+  const getOptions = (isDry: boolean): RunOptions => ({
+    limit: noLimit ? null : parseInt(limit) || 10,
+    dryRun: isDry,
+    threadCount: parseInt(threadCount) || 4,
+    urisMode: 'default',
+    urisFile: "",
+    customUrisModule: "",
+    processMode: 'default',
+    customProcessModule: ""
+  });
+
+  const handleStartDry = () => {
+      onRun('dry', getOptions(true));
+  };
+
+  const handleRetryDry = () => {
+      onRun('retry-dry', getOptions(true));
+  };
+
+  const handleWetRun = () => {
+      onRun('wet', getOptions(false));
   };
 
   return (
@@ -91,34 +102,42 @@ export function RunFooter({ jobName, onRun, disabled }: RunFooterProps) {
             />
         </div>
 
-        <div className="w-px h-8 bg-border" />
-
-        <div className="flex items-center gap-2">
-            <Checkbox 
-                id="dry-run" 
-                checked={dryRun} 
-                onCheckedChange={(c) => setDryRun(!!c)} 
-                disabled={disabled}
-            />
-            <Label htmlFor="dry-run" className="cursor-pointer text-sm font-medium">Dry Run</Label>
-        </div>
-
         <div className="flex-1" />
 
-        <Button 
-            onClick={handleRun} 
-            size="sm"
-            disabled={disabled}
-            className={cn(
-                "min-w-[140px] gap-2 font-semibold shadow-sm transition-all",
-                dryRun 
-                    ? "bg-amber-600 hover:bg-amber-700 text-white" 
-                    : "bg-red-600 hover:bg-red-700 text-white hover:scale-105"
-            )}
-        >
-            {dryRun ? <PlayCircle className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}
-            {dryRun ? "Start Dry Run" : "Execute Job"}
-        </Button>
+        {!hasLastRun ? (
+            <Button 
+                onClick={handleStartDry} 
+                size="sm"
+                disabled={disabled}
+                className="min-w-[140px] gap-2 font-semibold shadow-sm bg-amber-600 hover:bg-amber-700 text-white"
+            >
+                <PlayCircle className="h-4 w-4" />
+                Start Dry Run
+            </Button>
+        ) : (
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
+                <Button 
+                    onClick={handleRetryDry} 
+                    size="sm"
+                    variant="outline"
+                    disabled={disabled}
+                    className="gap-2 font-semibold border-amber-200 hover:bg-amber-50 text-amber-700"
+                >
+                    <RefreshCcw className="h-3.5 w-3.5" />
+                    Re-run Dry Run
+                </Button>
+                <div className="w-px h-6 bg-border mx-1" />
+                <Button 
+                    onClick={handleWetRun} 
+                    size="sm"
+                    disabled={disabled}
+                    className="min-w-[140px] gap-2 font-semibold shadow-sm bg-red-600 hover:bg-red-700 text-white hover:scale-105 transition-all"
+                >
+                    <Play className="h-4 w-4 fill-current" />
+                    Execute Wet Run
+                </Button>
+            </div>
+        )}
     </div>
   );
 }

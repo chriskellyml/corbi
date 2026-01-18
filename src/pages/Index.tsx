@@ -4,11 +4,11 @@ import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
-import { RunFooter, RunOptions } from "../components/corb/RunFooter";
+import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions } from "../lib/api";
-import { Play, AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, Settings2 } from "lucide-react";
+import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
@@ -40,6 +40,9 @@ export default function Index() {
   const [permissions, setPermissions] = useState<PermissionMap>({});
   const [loading, setLoading] = useState(true);
 
+  // Run State
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+
   // UI State
   const [isEnvSaveDialogOpen, setIsEnvSaveDialogOpen] = useState(false);
   
@@ -56,12 +59,18 @@ export default function Index() {
   const [sessionPasswords, setSessionPasswords] = useState<Record<string, string>>({}); 
   const [pendingRunOptions, setPendingRunOptions] = useState<RunOptions | null>(null);
   const [pendingRunJobName, setPendingRunJobName] = useState<string | null>(null);
+  const [pendingRunAction, setPendingRunAction] = useState<RunAction | null>(null);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Reset lastRunId when switching jobs or projects
+  useEffect(() => {
+    setLastRunId(null);
+  }, [selectedProjectId, selection?.kind === 'source' ? selection.name : '']);
 
   const loadData = async () => {
     try {
@@ -117,6 +126,8 @@ export default function Index() {
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
+    setSelection(null); // Clear selection on project switch to be safe, auto-select below handles job selection
+    setLastRunId(null);
     
     // Auto-select first job
     if (id) {
@@ -128,9 +139,6 @@ export default function Index() {
                  return;
              }
         }
-        setSelection(null);
-    } else {
-        setSelection(null);
     }
   };
 
@@ -435,6 +443,12 @@ export default function Index() {
   const handleDeleteRun = async (projectId: string, envName: string, runId: string) => {
     try {
         await deleteRun(projectId, envName, runId);
+        
+        // Clean local state if we deleted the last run
+        if (lastRunId === runId) {
+            setLastRunId(null);
+        }
+
         setProjects(prev => prev.map(p => {
           if (p.id !== projectId) return p;
           // Filter out by checking matching environment AND matching timestamp
@@ -443,6 +457,7 @@ export default function Index() {
             runs: p.runs.filter(r => !(r.timestamp === runId && r.environments[0].name === envName))
           };
         }));
+        
         toast.success("Run deleted successfully");
         if (selection?.kind === 'run' && selection.runId === runId) {
           setSelection(null);
@@ -489,7 +504,6 @@ export default function Index() {
     setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
   };
 
-  // Specialized Handler for overriding properties in a Job File
   const handleJobOverrideChange = (key: string, value: string | undefined) => {
       if (!selectedProject || !selection || selection.kind !== 'source' || selection.type !== 'job') return;
 
@@ -539,7 +553,6 @@ export default function Index() {
       }
   };
 
-  // Toggle permission for the currently selected job in the current environment
   const toggleCurrentJobPermission = async () => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return;
       
@@ -571,8 +584,6 @@ export default function Index() {
       }
       return selectedProject.scripts.find(s => s.name === selection.name)?.content || "";
     } else {
-      // Find Run
-      // ID is now composite potentially, but selection.runId stores whatever the backend returned (composite or simple).
       const run = selectedProject.runs.find(r => r.id === selection.runId);
       const env = run?.environments.find(e => e.name === selection.envName);
       if (!env) return "Error: Environment not found";
@@ -586,25 +597,39 @@ export default function Index() {
     return "";
   };
 
-  const executeRun = async (projectId: string, jobName: string, options: RunOptions) => {
+  const executeRunSequence = async (projectId: string, jobName: string, action: RunAction, options: RunOptions) => {
     try {
+        // 1. If retrying dry run OR switching to wet run, delete previous dry run if it exists
+        if ((action === 'retry-dry' || action === 'wet') && lastRunId) {
+            await deleteRun(projectId, environment, lastRunId);
+        }
+
+        // 2. Create new run
         const runId = await createRun(projectId, jobName, environment, options);
+        
+        // 3. Update state
+        setLastRunId(runId);
+        
+        // 4. Refresh data
         const p = await fetchProjects();
         setProjects(p);
 
-        toast.success("Job Started", {
-          description: `Run created: ${runId}`,
+        toast.success(action === 'wet' ? "Wet Run Started" : "Dry Run Started", {
+          description: `Run ID: ${runId}`,
           duration: 3000,
         });
+
     } catch (e) {
-        toast.error("Failed to start run");
+        toast.error("Failed to execute run");
+        console.error(e);
     } finally {
         setPendingRunOptions(null);
         setPendingRunJobName(null);
+        setPendingRunAction(null);
     }
   };
 
-  const handleRunRequest = async (options: RunOptions) => {
+  const handleRunRequest = async (action: RunAction, options: RunOptions) => {
     if (!selectedProjectId) return;
     
     // Safety check for permissions
@@ -624,10 +649,11 @@ export default function Index() {
     if (!hasPassword) {
         setPendingRunOptions(options);
         setPendingRunJobName(jobName);
+        setPendingRunAction(action);
         setIsPasswordDialogOpen(true);
     } else {
         const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
-        await executeRun(selectedProjectId, jobName, finalOptions);
+        await executeRunSequence(selectedProjectId, jobName, action, finalOptions);
     }
   };
 
@@ -635,9 +661,9 @@ export default function Index() {
     if (remember) {
         setSessionPasswords(prev => ({ ...prev, [passwordKey]: password }));
     }
-    if (pendingRunOptions && pendingRunJobName && selectedProjectId) {
+    if (pendingRunOptions && pendingRunJobName && pendingRunAction && selectedProjectId) {
         const finalOptions = { ...pendingRunOptions, password };
-        executeRun(selectedProjectId, pendingRunJobName, finalOptions);
+        executeRunSequence(selectedProjectId, pendingRunJobName, pendingRunAction, finalOptions);
     } else {
         toast.success("Password updated in memory");
     }
@@ -650,7 +676,6 @@ export default function Index() {
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
   const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
 
-  // Derive job specific permissions for topbar
   const currentJobPermissions = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return undefined;
       return permissions[selectedProjectId]?.[selection.name];
@@ -752,6 +777,7 @@ export default function Index() {
                             jobName={selection.name}
                             onRun={handleRunRequest}
                             disabled={!isCurrentJobEnabled}
+                            hasLastRun={!!lastRunId}
                         />
                     )}
                 </div>
