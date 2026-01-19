@@ -1,5 +1,5 @@
 import { Project, ProjectRun, PermissionMap } from "../../types";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, Unlock } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, Unlock, FileBarChart } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 // Define the selection structure shared with parent
 export type SelectionType = 
   | { kind: 'source'; type: 'job' | 'script'; name: string }
-  | { kind: 'run'; runId: string; envName: string; category: 'root' | 'logs' | 'scripts'; fileName: string };
+  | { kind: 'run'; runId: string; envName: string; category: 'root' | 'logs' | 'scripts' | 'reports'; fileName: string };
 
 interface ProjectSidebarProps {
   projects: Project[];
@@ -67,10 +67,7 @@ export function ProjectSidebar({
                   // The value in job file typically includes 'scripts/' prefix for project files
                   // We need to strip it to match script.name which is relative to scripts/
                   if (rawVal.startsWith('scripts/')) {
-                      // Strip 'scripts/' prefix AND '|ADHOC' suffix to match the actual file name
-                      let scriptName = rawVal.replace(/^scripts\//, '');
-                      scriptName = scriptName.replace('|ADHOC', '');
-                      linkedScripts.add(scriptName);
+                      linkedScripts.add(rawVal.replace(/^scripts\//, ''));
                   }
               }
           });
@@ -93,12 +90,7 @@ export function ProjectSidebar({
 
   // Filter runs for display based on CURRENT ENVIRONMENT
   const filteredRuns = selectedProject?.runs.filter(r => 
-    r.environments.some(e => {
-        // The run folder name (e.name) MUST match the stripped current environment
-        // We do NOT strip the run folder name, because the run folder MUST be prefix-free.
-        const cleanCurrentEnv = currentEnv.replace(/^\d+-/, '');
-        return e.name === cleanCurrentEnv;
-    })
+    r.environments.some(e => e.name === currentEnv)
   ) || [];
 
   // PROJECT LIST VIEW
@@ -460,6 +452,25 @@ function RunItem({ run, projectId, selection, onSelectFile, onDeleteRun }: {
                     isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.fileName === 'export.csv'}
                     onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'root', fileName: 'export.csv' })}
                 />
+
+                {/* Reports Folder */}
+                {env.reports && env.reports.length > 0 && (
+                    <div className="mt-1">
+                        <div className="text-[10px] font-semibold text-muted-foreground/70 px-2 py-0.5 flex items-center gap-1">
+                            <FileBarChart className="h-3 w-3" /> reports
+                        </div>
+                        {env.reports.map(rep => (
+                            <RunFileRow 
+                            key={rep.name}
+                            name={rep.name} 
+                            icon={FileText} 
+                            indent
+                            isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.category === 'reports' && selection.fileName === rep.name}
+                            onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'reports', fileName: rep.name })}
+                            />
+                        ))}
+                    </div>
+                )}
 
                 {/* Logs Folder */}
                 <div className="mt-1">

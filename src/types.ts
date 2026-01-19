@@ -16,6 +16,7 @@ export interface RunEnvironment {
   options: string;
   export: string;
   logs: RunFile[];
+  reports: RunFile[];
   scripts: RunFile[];
 }
 

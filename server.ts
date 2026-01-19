@@ -5,10 +5,6 @@ import fs from 'fs/promises';
 import { existsSync, mkdirSync, createWriteStream } from 'fs';
 import path from 'path';
 import multer from 'multer';
-import { exec } from 'child_process';
-import util from 'util';
-
-const execPromise = util.promisify(exec);
 
 const app = express();
 const PORT = 3001;
@@ -17,34 +13,11 @@ const WORKING_DIR = '/Users/chkelly/Workspace/projects/lvbb/kt/1-beheer-scripts/
 app.use(cors());
 app.use(bodyParser.json());
 
-// Setup logging
-const LOGS_DIR = path.join(process.cwd(), 'logs');
-if (!existsSync(LOGS_DIR)) {
-    try {
-        mkdirSync(LOGS_DIR, { recursive: true });
-    } catch (e) {
-        console.error("Failed to create logs directory:", e);
-    }
-}
-
-const logFileName = `server-${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.log`;
-const logFilePath = path.join(LOGS_DIR, logFileName);
-const logStream = createWriteStream(logFilePath, { flags: 'a' });
-
-function log(message: string) {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-    console.log(message);
-    logStream.write(logMessage);
-}
-
-log(`Server started. Logging to ${logFilePath}`);
-
 // Setup directories
-const PROJECTS_DIR = path.join(WORKING_DIR, 'src', 'projects');
+const PROJECTS_DIR = path.join(WORKING_DIR, 'projects');
 const ENV_DIR = path.join(WORKING_DIR, 'env');
 const RUNS_DIR = path.join(WORKING_DIR, 'runs');
-const SUPPORT_DIR = path.join(WORKING_DIR, 'src', 'support');
+const SUPPORT_DIR = path.join(WORKING_DIR, 'support');
 const URIS_DIR = path.join(SUPPORT_DIR, 'uris');
 const PROCESS_DIR = path.join(SUPPORT_DIR, 'process');
 const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
@@ -55,9 +28,9 @@ if (!existsSync(WORKING_DIR)) {
   console.warn(`WARNING: Working directory ${WORKING_DIR} does not exist. Creating it for testing purposes.`);
   try {
       mkdirSync(WORKING_DIR, { recursive: true });
-      mkdirSync(PROJECTS_DIR, { recursive: true });
-      mkdirSync(ENV_DIR, { recursive: true });
-      mkdirSync(RUNS_DIR, { recursive: true });
+      mkdirSync(PROJECTS_DIR);
+      mkdirSync(ENV_DIR);
+      mkdirSync(RUNS_DIR);
   } catch (e) {
       console.error("Failed to create working directory:", e);
   }
@@ -183,14 +156,14 @@ app.get('/api/projects', async (req, res) => {
 
       // Get Scripts (Recursive)
       const scriptsDir = path.join(pPath, 'scripts');
-      let scripts: any[] = [];
+      let scripts = [];
       if (existsSync(scriptsDir)) {
          scripts = await getScriptsRecursively(scriptsDir, scriptsDir);
       }
 
       // Get Runs (Nested Structure: runs/<project>/<env>/<timestamp>)
       const pRunsDir = path.join(RUNS_DIR, pName);
-      let runs: any[] = [];
+      let runs = [];
       
       if (existsSync(pRunsDir)) {
           // 1. Get Environment Directories
@@ -216,15 +189,22 @@ app.get('/api/projects', async (req, res) => {
                   try { exportContent = await fs.readFile(path.join(rPath, 'export.csv'), 'utf-8'); } catch(e) {}
 
                   // Logs
-                  const logs: any[] = [];
+                  const logs = [];
                   const logFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.log'));
                   for (const lf of logFiles) {
                       logs.push({ name: lf, content: await fs.readFile(path.join(rPath, lf), 'utf-8') });
                   }
+                  
+                  // Reports (*-report.txt)
+                  const reports = [];
+                  const reportFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('-report.txt'));
+                  for (const rf of reportFiles) {
+                      reports.push({ name: rf, content: await fs.readFile(path.join(rPath, rf), 'utf-8') });
+                  }
 
                   // Scripts (snapshot)
                   const runScriptsDir = path.join(rPath, 'scripts');
-                  let runScripts: any[] = [];
+                  let runScripts = [];
                   if (existsSync(runScriptsDir)) {
                       runScripts = await getScriptsRecursively(runScriptsDir, runScriptsDir);
                   }
@@ -240,6 +220,7 @@ app.get('/api/projects', async (req, res) => {
                           options,
                           export: exportContent,
                           logs,
+                          reports,
                           scripts: runScripts
                       }]
                   };
@@ -444,59 +425,101 @@ app.post('/api/run', async (req, res) => {
     
     try {
         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-        const jobNameNoExt = jobName.replace(/\.job$/, '');
         
-        // Prepare Environment Variables for Password
-        // run.sh expects PASSWD_ENVNAME (with hyphens replaced by underscores)
-        // e.g. 01-TEST -> PASSWD_01_TEST
-        const envVarName = `PASSWD_${envName.replace(/-/g, '_')}`;
-        const envVars = { ...process.env, [envVarName]: password || '' };
+        // Updated Structure: runs/<project>/<env>/<timestamp>
+        const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
+        
+        await fs.mkdir(runDir, { recursive: true });
 
-        // Helper to run the script
-        const executeScript = async (isDryRun: boolean, stepName: string) => {
-            const limitArg = options.limit ? `--limit=${options.limit}` : '';
-            const skipArg = !isDryRun ? '--skip-proceed-confirmation' : '';
-            
-            const command = `./run.sh --env=${envName} --project=${projectId} --job=${jobNameNoExt} --dry-run=${isDryRun} --run-id=${timestamp} ${limitArg} ${skipArg}`;
-            
-            log(`--- STEP: ${stepName} ---`);
-            log(`Executing: ${command}`);
-            
-            try {
-                const { stdout, stderr } = await execPromise(command, { 
-                    cwd: WORKING_DIR,
-                    env: envVars
-                });
-                log(`STDOUT:\n${stdout}`);
-                if (stderr) log(`STDERR:\n${stderr}`);
-                log(`--- STEP COMPLETED: ${stepName} ---`);
-            } catch (e) {
-                log(`Exec Error in ${stepName}: ${e.message || e}`);
-                if (e.stdout) log(`STDOUT:\n${e.stdout}`);
-                if (e.stderr) log(`STDERR:\n${e.stderr}`);
-                throw e; // Re-throw to be caught by main handler
+        // 1. Read & Copy Job File
+        const jobPath = path.join(PROJECTS_DIR, projectId, jobName);
+        let jobContent = await fs.readFile(jobPath, 'utf-8');
+        await fs.writeFile(path.join(runDir, jobName), jobContent);
+
+        // 2. Read & Copy Env File
+        const envContent = await fs.readFile(path.join(ENV_DIR, `${envName}.props`), 'utf-8');
+        await fs.writeFile(path.join(runDir, `${envName}.props`), envContent);
+
+        // 3. Create job.options (Merged)
+        let optionsContent = `# Generated at ${timestamp}\n`;
+        
+        // A. Environment
+        optionsContent += `\n# --- Environment: ${envName} ---\n`;
+        optionsContent += envContent + '\n';
+        
+        // Inject Password if provided
+        if (password) {
+            optionsContent += `# Injected Password\nPASS=${password}\n`;
+        }
+
+        // B. Job Overrides (handle options modifications here)
+        optionsContent += `\n# --- Job: ${jobName} ---\n`;
+        
+        const lines = jobContent.split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            // Skip URIS-MODULE if we are overriding it
+            if ((options.urisMode === 'file' || options.urisMode === 'custom') && 
+                (trimmed.startsWith('URIS-MODULE') || trimmed.startsWith('URIS_MODULE'))) {
+                optionsContent += `# OVERRIDDEN: ${line}\n`;
+                continue;
             }
-        };
+             // Skip PROCESS-MODULE if we are overriding it
+             if ((options.processMode === 'custom') && 
+             (trimmed.startsWith('PROCESS-MODULE') || trimmed.startsWith('PROCESS_MODULE'))) {
+             optionsContent += `# OVERRIDDEN: ${line}\n`;
+             continue;
+         }
+            optionsContent += line + '\n';
+        }
 
-        // 1. Always Run Dry Run First (to scaffold folders)
-        // This is required by run.sh even for wet runs
-        log("Starting Run Sequence...");
-        await executeScript(true, "Scaffold / Prerequisite Dry Run");
+        // Add Overrides
+        optionsContent += `\n# --- Run Overrides ---\n`;
+        if (options.urisMode === 'file' && options.urisFile) {
+            optionsContent += `URIS-FILE=${options.urisFile}\n`;
+        } else if (options.urisMode === 'custom' && options.customUrisModule) {
+            optionsContent += `URIS-MODULE=${path.join(URIS_DIR, options.customUrisModule)}\n`;
+        }
 
-        // 2. If Wet Run requested, run again with dry-run=false
-        if (!options.dryRun) {
-            log("Wet run requested. Proceeding to actual execution.");
-            await executeScript(false, "Actual Execution (Wet Run)");
+        if (options.processMode === 'custom' && options.customProcessModule) {
+             // Updated to use PROCESS_DIR
+             optionsContent += `PROCESS-MODULE=${path.join(PROCESS_DIR, options.customProcessModule)}\n`;
+        }
+
+        // C. Runtime Settings
+        if (options.limit) {
+            optionsContent += `URIS-MODULE.LIMIT=${options.limit}\n`;
+            optionsContent += `PROCESS-MODULE.LIMIT=${options.limit}\n`;
+        }
+        
+        const dryRunVal = String(options.dryRun);
+        optionsContent += `URIS-MODULE.DRY-RUN=${dryRunVal}\n`;
+        optionsContent += `PROCESS-MODULE.DRY-RUN=${dryRunVal}\n`;
+        
+        optionsContent += `THREAD-COUNT=${options.threadCount}\n`;
+
+        await fs.writeFile(path.join(runDir, 'job.options'), optionsContent);
+
+        // 4. Copy Scripts
+        const scriptsSrc = path.join(PROJECTS_DIR, projectId, 'scripts');
+        const scriptsDst = path.join(runDir, 'scripts');
+        if (existsSync(scriptsSrc)) {
+            await copyDir(scriptsSrc, scriptsDst);
+        }
+
+        // 5. Create placeholder logs & reports for Demo
+        // In real app, run.sh does this.
+        await fs.writeFile(path.join(runDir, 'corb.log'), `Run initiated at ${timestamp}\nDry Run: ${options.dryRun}`);
+        if (options.dryRun) {
+            await fs.writeFile(path.join(runDir, 'dry-report.txt'), `uri,status,count\n/doc/1.xml,analyzed,1\n/doc/2.xml,analyzed,1`);
         } else {
-            log("Dry run only requested. Run sequence complete.");
+            await fs.writeFile(path.join(runDir, 'wet-report.txt'), `uri,status,time\n/doc/1.xml,processed,10ms\n/doc/2.xml,processed,12ms`);
         }
         
         res.json({ success: true, runId: timestamp });
     } catch (error) {
-        log(`Run failed: ${error.message || error}`);
-        // Return stderr if available in error object
-        const msg = error.stderr || error.message;
-        res.status(500).json({ error: msg });
+        console.error(error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -524,6 +547,6 @@ app.delete('/api/run/:projectId/:envName/:runId', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  log(`Server running on http://localhost:${PORT}`);
-  log(`Working Dir: ${WORKING_DIR}`);
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Working Dir: ${WORKING_DIR}`);
 });
