@@ -4,6 +4,7 @@ import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
+import { ReportViewer } from "../components/corb/ReportViewer";
 import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap } from "../types";
@@ -593,6 +594,7 @@ export default function Index() {
       }
       if (selection.category === 'logs') return env.logs.find(f => f.name === selection.fileName)?.content || "";
       if (selection.category === 'scripts') return env.scripts.find(f => f.name === selection.fileName)?.content || "";
+      if (selection.category === 'reports') return env.reports.find(f => f.name === selection.fileName)?.content || "";
     }
     return "";
   };
@@ -674,6 +676,7 @@ export default function Index() {
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
   const isReadOnly = selection?.kind === 'run';
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
+  const isReport = selection?.kind === 'run' && selection.category === 'reports';
   const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
 
   const currentJobPermissions = useMemo(() => {
@@ -769,6 +772,12 @@ export default function Index() {
                                     value={getCurrentFileContent()} 
                                 />
                             </div>
+                        )}
+                        {isReport && (
+                            <ReportViewer 
+                                content={getCurrentFileContent()} 
+                                fileName={selection.fileName}
+                            />
                         )}
                     </div>
 

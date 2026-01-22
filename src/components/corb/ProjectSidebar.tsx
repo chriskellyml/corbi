@@ -1,5 +1,5 @@
 import { Project, ProjectRun, PermissionMap } from "../../types";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, Unlock } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, Unlock, FileSpreadsheet } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 // Define the selection structure shared with parent
 export type SelectionType = 
   | { kind: 'source'; type: 'job' | 'script'; name: string }
-  | { kind: 'run'; runId: string; envName: string; category: 'root' | 'logs' | 'scripts'; fileName: string };
+  | { kind: 'run'; runId: string; envName: string; category: 'root' | 'logs' | 'scripts' | 'reports'; fileName: string };
 
 interface ProjectSidebarProps {
   projects: Project[];
@@ -460,6 +460,25 @@ function RunItem({ run, projectId, selection, onSelectFile, onDeleteRun }: {
                     isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.fileName === 'export.csv'}
                     onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'root', fileName: 'export.csv' })}
                 />
+
+                {/* Reports Folder (NEW) */}
+                {env.reports && env.reports.length > 0 && (
+                    <div className="mt-1">
+                        <div className="text-[10px] font-semibold text-muted-foreground/70 px-2 py-0.5 flex items-center gap-1">
+                            <FileSpreadsheet className="h-3 w-3" /> reports
+                        </div>
+                        {env.reports.map(report => (
+                            <RunFileRow 
+                            key={report.name}
+                            name={report.name} 
+                            icon={FileText} 
+                            indent
+                            isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.category === 'reports' && selection.fileName === report.name}
+                            onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'reports', fileName: report.name })}
+                            />
+                        ))}
+                    </div>
+                )}
 
                 {/* Logs Folder */}
                 <div className="mt-1">

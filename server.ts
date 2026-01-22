@@ -221,6 +221,13 @@ app.get('/api/projects', async (req, res) => {
                   for (const lf of logFiles) {
                       logs.push({ name: lf, content: await fs.readFile(path.join(rPath, lf), 'utf-8') });
                   }
+                  
+                  // Reports (e.g. dry-report.txt, wet-report.txt)
+                  const reports: any[] = [];
+                  const reportFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('report.txt'));
+                  for (const rf of reportFiles) {
+                      reports.push({ name: rf, content: await fs.readFile(path.join(rPath, rf), 'utf-8') });
+                  }
 
                   // Scripts (snapshot)
                   const runScriptsDir = path.join(rPath, 'scripts');
@@ -240,7 +247,8 @@ app.get('/api/projects', async (req, res) => {
                           options,
                           export: exportContent,
                           logs,
-                          scripts: runScripts
+                          scripts: runScripts,
+                          reports
                       }]
                   };
               }));
