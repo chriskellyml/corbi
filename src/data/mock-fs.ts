@@ -17,6 +17,7 @@ export interface RunEnvironment {
   export: string;  // content of export.csv
   logs: RunFile[];
   scripts: RunFile[];
+  reports: RunFile[];
 }
 
 export interface ProjectRun {
@@ -90,6 +91,9 @@ xdmp:document-delete($URI)`
             scripts: [
               { name: 'collect.xqy', content: `(: Snapshot of collect.xqy at runtime :)` },
               { name: 'process.xqy', content: `(: Snapshot of process.xqy at runtime :)` }
+            ],
+            reports: [
+              { name: 'dry-report.txt', content: `URI|STATUS|MSG\n/doc/1.xml|simulated|would delete\n/doc/2.xml|simulated|would delete` }
             ]
           }
         ]
