@@ -159,6 +159,20 @@ export async function createRun(
   return data.runId;
 }
 
+export async function getRunStatus(projectId: string, envName: string, runId: string): Promise<string> {
+    const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}/status`);
+    if (!res.ok) throw new Error("Failed to get run status");
+    const data = await res.json();
+    return data.status;
+}
+
+export async function getRunFile(projectId: string, envName: string, runId: string, filename: string): Promise<string> {
+    const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}/file/${filename}`);
+    if (!res.ok) throw new Error("Failed to fetch run file");
+    const data = await res.json();
+    return data.content;
+}
+
 export async function deleteRun(projectId: string, envName: string, runId: string): Promise<void> {
     const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}`, {
         method: 'DELETE'

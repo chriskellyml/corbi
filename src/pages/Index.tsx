@@ -6,9 +6,11 @@ import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
 import { ReportViewer } from "../components/corb/ReportViewer";
 import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
+import { RunningFooter } from "../components/corb/RunningFooter";
+import { LogViewer } from "../components/corb/LogViewer";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions } from "../lib/api";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -28,6 +30,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
 
+type RunMode = 'idle' | 'running' | 'review';
+
 export default function Index() {
   const [environment, setEnvironment] = useState<string>('LOC');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -43,6 +47,11 @@ export default function Index() {
 
   // Run State
   const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [runMode, setRunMode] = useState<RunMode>('idle');
+  const [activeRunStatus, setActiveRunStatus] = useState<'running' | 'completed' | 'error'>('running');
+  const [liveReport, setLiveReport] = useState("");
+  const [liveLog, setLiveLog] = useState("");
+  const [activeRunType, setActiveRunType] = useState<'dry'|'wet'>('dry');
 
   // UI State
   const [isEnvSaveDialogOpen, setIsEnvSaveDialogOpen] = useState(false);
@@ -63,6 +72,7 @@ export default function Index() {
   const [pendingRunAction, setPendingRunAction] = useState<RunAction | null>(null);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadData();
@@ -70,8 +80,17 @@ export default function Index() {
 
   // Reset lastRunId when switching jobs or projects
   useEffect(() => {
-    setLastRunId(null);
+    if (runMode === 'idle') {
+        setLastRunId(null);
+    }
   }, [selectedProjectId, selection?.kind === 'source' ? selection.name : '']);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+      return () => {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -84,7 +103,6 @@ export default function Index() {
         // Ensure environment selection is valid, otherwise pick first
         const envKeys = Object.keys(e).sort();
         if ((!environment || !e[environment]) && envKeys.length > 0) {
-             // Try to keep current if valid, else first
              setEnvironment(envKeys[0]);
         }
     } catch (err) {
@@ -95,12 +113,56 @@ export default function Index() {
     }
   };
 
-  // Sorted environments for display
+  // Polling Logic for Running Mode
+  useEffect(() => {
+    if (runMode === 'running' && lastRunId && selectedProjectId) {
+        // Start polling
+        pollIntervalRef.current = setInterval(async () => {
+            try {
+                // 1. Check Status
+                const statusStr = await getRunStatus(selectedProjectId, environment, lastRunId);
+                const status = statusStr as 'running' | 'completed' | 'error';
+                setActiveRunStatus(status);
+
+                // 2. Fetch Files
+                // Determine filenames based on run type
+                // Actually we don't know easily if it's currently dry or wet phase if we just fire "wet" action which runs both.
+                // But typically users care about the *latest* output.
+                // If it's a dry run request -> dry-report.txt
+                // If it's a wet run request -> wet-report.txt (but dry-report might exist first)
+                // Let's assume files are dry-report.txt / dry-output.log OR wet-report.txt / wet-output.log
+                
+                const prefix = activeRunType === 'wet' ? 'wet' : 'dry';
+                
+                const [report, log] = await Promise.all([
+                    getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-report.txt`),
+                    getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-output.log`)
+                ]);
+                
+                setLiveReport(report);
+                setLiveLog(log);
+
+                if (status === 'completed' || status === 'error') {
+                    setRunMode('review');
+                    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+                    // Refresh project data to show new run in sidebar
+                    loadData();
+                }
+
+            } catch (e) {
+                console.error("Polling error", e);
+            }
+        }, 1000);
+    }
+
+    return () => {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [runMode, lastRunId, selectedProjectId, environment, activeRunType]);
+
   const sortedEnvKeys = useMemo(() => Object.keys(envFiles).sort(), [envFiles]);
-
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-
-  const getCurrentEnvUser = () => {
+  const currentUserName = (() => {
     const content = envFiles[environment] || "";
     const lines = content.split('\n');
     for (const line of lines) {
@@ -113,13 +175,10 @@ export default function Index() {
         }
     }
     return 'unknown';
-  };
-
-  const currentUserName = getCurrentEnvUser();
+  })();
   const passwordKey = `${environment}:${currentUserName}`;
   const hasPassword = !!sessionPasswords[passwordKey];
 
-  // Helper to check if current selected job is enabled
   const isCurrentJobEnabled = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return false;
       return permissions[selectedProjectId]?.[selection.name]?.[environment] === true;
@@ -127,10 +186,10 @@ export default function Index() {
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
-    setSelection(null); // Clear selection on project switch to be safe, auto-select below handles job selection
+    setSelection(null); 
     setLastRunId(null);
+    setRunMode('idle');
     
-    // Auto-select first job
     if (id) {
         const project = projects.find(p => p.id === id);
         if (project && project.jobs.length > 0) {
@@ -143,8 +202,11 @@ export default function Index() {
     }
   };
 
+  // ... (Keep handleCreateJob, handleCopyFile, handleRenameFile, handleDeleteFile, handleMoveFile, handleMoveEnv, submitFileOp, submitDelete, handleRunJobFromSidebar, handleDeleteRun, handleContentChange, updateFileContent, handleEnvFileChange, handleJobOverrideChange, handleResetEnv, handleSaveEnv, toggleCurrentJobPermission, getCurrentFileContent)
+  // ... Copied logic for brevity, assuming they remain unchanged but included in final output ...
+  
+  // Re-implementing them here to ensure the file is complete
   const handleCreateJob = (projectId: string) => {
-    // Determine next number prefix
     const project = projects.find(p => p.id === projectId);
     let nextNum = 1;
     if (project) {
@@ -157,7 +219,6 @@ export default function Index() {
         });
     }
     const prefix = String(nextNum).padStart(2, '0');
-
     setFileOpContext({ projectId, type: 'job' });
     setNameDialogMode('create');
     setNameDialogValue(`${prefix}-`);
@@ -167,8 +228,6 @@ export default function Index() {
   const handleCopyFile = (projectId: string, fileName: string, type: 'job'|'script') => {
     setFileOpContext({ projectId, fileName, type });
     setNameDialogMode('copy');
-    
-    // Strip .job extension for display if type is job
     let displayValue = fileName;
     if (type === 'job') {
         displayValue = fileName.replace(/\.job$/, '');
@@ -182,18 +241,14 @@ export default function Index() {
             setNameDialogValue(`${fileName}-copy`);
         }
     }
-    
     setIsNameDialogOpen(true);
   };
 
   const handleRenameFile = (projectId: string, fileName: string, type: 'job'|'script') => {
     setFileOpContext({ projectId, fileName, type });
     setNameDialogMode('rename');
-    
-    // Strip .job extension for display if type is job
     let displayValue = fileName;
     if (type === 'job') displayValue = fileName.replace(/\.job$/, '');
-    
     setNameDialogValue(displayValue);
     setIsNameDialogOpen(true);
   };
@@ -204,114 +259,66 @@ export default function Index() {
   };
 
   const handleMoveFile = async (projectId: string, fileName: string, direction: 'up' | 'down', type: 'job' | 'script') => {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return;
-    
-    const getFiles = () => type === 'job' ? project.jobs : project.scripts;
-    let files = getFiles();
-    
-    // Initial Sort
-    let sorted = [...files].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-
-    // --- Normalization Logic ---
-    const needsNormalization = sorted.some(f => !/^\d+-/.test(f.name));
-    
-    if (needsNormalization) {
-        const tId = toast.loading("Normalizing file names for ordering...");
-        try {
-            // Rename all files to enforce "01-", "02-" prefix based on current order
-            for (let i = 0; i < sorted.length; i++) {
-                const f = sorted[i];
-                // Strip existing numbers if any to get clean base
-                const cleanName = f.name.replace(/^\d+-/, '');
-                const prefix = String(i + 1).padStart(2, '0');
-                const newName = `${prefix}-${cleanName}`;
-                
-                if (f.name !== newName) {
-                    await renameFile(projectId, f.name, newName, type);
-                }
-            }
-            
-            // Reload data to ensure we have fresh names
-            const [p] = await Promise.all([fetchProjects()]);
-            setProjects(p);
-            
-            // Re-fetch local references
-            const newProject = p.find(pp => pp.id === projectId);
-            if (newProject) {
-                const newFiles = type === 'job' ? newProject.jobs : newProject.scripts;
-                sorted = [...newFiles].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-                
-                // We need to update the `fileName` (which was the old name) to the new name 
-                // so we can find the index for swapping.
-                const cleanOriginal = fileName.replace(/^\d+-/, '');
-                const found = sorted.find(f => f.name === cleanOriginal || f.name.endsWith(`-${cleanOriginal}`));
-                if (found) {
-                    fileName = found.name;
-                }
-            }
-            toast.dismiss(tId);
-        } catch (e: any) {
-            toast.dismiss(tId);
-            toast.error("Failed to normalize file names: " + e.message);
-            return;
-        }
-    }
-    
-    // --- Swap Logic ---
-    const idx = sorted.findIndex(f => f.name === fileName);
-    if (idx === -1) return;
-    
-    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= sorted.length) return;
-    
-    const fileA = sorted[idx];
-    const fileB = sorted[targetIdx];
-    
-    // Parse prefixes
-    const regex = /^(\d+)-(.*)$/;
-    const matchA = fileA.name.match(regex);
-    const matchB = fileB.name.match(regex);
-    
-    if (!matchA || !matchB) {
-        toast.error("Ordering error: Files must have numeric prefixes (e.g. 01-name).");
-        return;
-    }
-    
-    const prefixA = matchA[1];
-    const bodyA = matchA[2];
-    const prefixB = matchB[1];
-    const bodyB = matchB[2];
-    
-    // Construct new names by swapping prefixes
-    const newNameA = `${prefixB}-${bodyA}`; // A takes B's prefix
-    const newNameB = `${prefixA}-${bodyB}`; // B takes A's prefix
-    
-    // Rename Sequence (A->Temp, B->NewB, Temp->NewA)
-    const tempName = `${Date.now()}-move-temp.tmp`;
-    
-    try {
-        await renameFile(projectId, fileA.name, tempName, type);
-        await renameFile(projectId, fileB.name, newNameB, type);
-        await renameFile(projectId, tempName, newNameA, type);
-        
-        await loadData();
-        
-        // If the moved file was selected, update selection to new name
-        if (selection?.kind === 'source' && selection.name === fileA.name) {
-             setSelection({ ...selection, name: newNameA });
-        }
-    } catch (e: any) {
-        toast.error("Failed to move file: " + e.message);
-    }
+      // (Keep existing implementation)
+      const project = projects.find(p => p.id === projectId);
+      if (!project) return;
+      const getFiles = () => type === 'job' ? project.jobs : project.scripts;
+      let files = getFiles();
+      let sorted = [...files].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const needsNormalization = sorted.some(f => !/^\d+-/.test(f.name));
+      if (needsNormalization) {
+          const tId = toast.loading("Normalizing file names for ordering...");
+          try {
+              for (let i = 0; i < sorted.length; i++) {
+                  const f = sorted[i];
+                  const cleanName = f.name.replace(/^\d+-/, '');
+                  const prefix = String(i + 1).padStart(2, '0');
+                  const newName = `${prefix}-${cleanName}`;
+                  if (f.name !== newName) await renameFile(projectId, f.name, newName, type);
+              }
+              const [p] = await Promise.all([fetchProjects()]);
+              setProjects(p);
+              const newProject = p.find(pp => pp.id === projectId);
+              if (newProject) {
+                  const newFiles = type === 'job' ? newProject.jobs : newProject.scripts;
+                  sorted = [...newFiles].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                  const cleanOriginal = fileName.replace(/^\d+-/, '');
+                  const found = sorted.find(f => f.name === cleanOriginal || f.name.endsWith(`-${cleanOriginal}`));
+                  if (found) fileName = found.name;
+              }
+              toast.dismiss(tId);
+          } catch (e: any) {
+              toast.dismiss(tId);
+              toast.error("Failed to normalize file names: " + e.message);
+              return;
+          }
+      }
+      const idx = sorted.findIndex(f => f.name === fileName);
+      if (idx === -1) return;
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= sorted.length) return;
+      const fileA = sorted[idx];
+      const fileB = sorted[targetIdx];
+      const regex = /^(\d+)-(.*)$/;
+      const matchA = fileA.name.match(regex);
+      const matchB = fileB.name.match(regex);
+      if (!matchA || !matchB) { toast.error("Ordering error: Files must have numeric prefixes"); return; }
+      const newNameA = `${matchB[1]}-${matchA[2]}`;
+      const newNameB = `${matchA[1]}-${matchB[2]}`;
+      const tempName = `${Date.now()}-move-temp.tmp`;
+      try {
+          await renameFile(projectId, fileA.name, tempName, type);
+          await renameFile(projectId, fileB.name, newNameB, type);
+          await renameFile(projectId, tempName, newNameA, type);
+          await loadData();
+          if (selection?.kind === 'source' && selection.name === fileA.name) setSelection({ ...selection, name: newNameA });
+      } catch (e: any) { toast.error("Failed to move file: " + e.message); }
   };
 
   const handleMoveEnv = async (envName: string, direction: 'left' | 'right') => {
+      // (Keep existing implementation)
       let sorted = [...sortedEnvKeys];
-      
-      // 1. Normalization
       const needsNormalization = sorted.some(k => !/^\d+-/.test(k));
-      
       if (needsNormalization) {
           const tId = toast.loading("Normalizing environments for ordering...");
           try {
@@ -320,84 +327,49 @@ export default function Index() {
                   const clean = key.replace(/^\d+-/, '');
                   const prefix = String(i + 1).padStart(2, '0');
                   const newName = `${prefix}-${clean}`;
-                  
-                  if (key !== newName) {
-                      // Note: envName passed in UI is without extension, but renaming needs extension
-                      await renameFile(null, `${key}.props`, `${newName}.props`, 'env');
-                  }
+                  if (key !== newName) await renameFile(null, `${key}.props`, `${newName}.props`, 'env');
               }
-              // Refresh data
               const e = await fetchEnvFiles();
               setEnvFiles(e);
               setOriginalEnvFiles({ ...e });
               sorted = Object.keys(e).sort();
-              
-              // Update target envName to new name
               const cleanOriginal = envName.replace(/^\d+-/, '');
               const found = sorted.find(k => k === cleanOriginal || k.endsWith(`-${cleanOriginal}`));
               if (found) envName = found;
-
               toast.dismiss(tId);
-          } catch (e: any) {
-              toast.dismiss(tId);
-              toast.error("Failed to normalize: " + e.message);
-              return;
-          }
+          } catch (e: any) { toast.dismiss(tId); toast.error("Failed to normalize: " + e.message); return; }
       }
-      
-      // 2. Swapping
       const idx = sorted.indexOf(envName);
       if (idx === -1) return;
-      
       const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
       if (targetIdx < 0 || targetIdx >= sorted.length) return;
-      
       const nameA = sorted[idx];
       const nameB = sorted[targetIdx];
-      
       const regex = /^(\d+)-(.*)$/;
       const matchA = nameA.match(regex);
       const matchB = nameB.match(regex);
-      
-      if (!matchA || !matchB) {
-          toast.error("Files must have numeric prefixes");
-          return;
-      }
-      
+      if (!matchA || !matchB) { toast.error("Files must have numeric prefixes"); return; }
       const newNameA = `${matchB[1]}-${matchA[2]}`;
       const newNameB = `${matchA[1]}-${matchB[2]}`;
-      
       const tempName = `999-temp-swap`;
-
       try {
           await renameFile(null, `${nameA}.props`, `${tempName}.props`, 'env');
           await renameFile(null, `${nameB}.props`, `${newNameB}.props`, 'env');
           await renameFile(null, `${tempName}.props`, `${newNameA}.props`, 'env');
-          
           const e = await fetchEnvFiles();
           setEnvFiles(e);
           setOriginalEnvFiles({ ...e });
-          
           if (environment === nameA) setEnvironment(newNameA);
           else if (environment === nameB) setEnvironment(newNameB);
-          
-      } catch (e: any) {
-          toast.error("Failed to move env: " + e.message);
-      }
+      } catch (e: any) { toast.error("Failed to move env: " + e.message); }
   };
 
   const submitFileOp = async () => {
     if (!fileOpContext || !nameDialogValue) return;
     const { projectId, fileName, type } = fileOpContext;
-    
     try {
         let finalName = nameDialogValue;
-        
-        // Auto-append .job if missing for jobs
-        if (type === 'job' && !finalName.endsWith('.job')) {
-            finalName += '.job';
-        }
-
+        if (type === 'job' && !finalName.endsWith('.job')) finalName += '.job';
         if (nameDialogMode === 'create') {
             await saveFile(projectId, finalName, "", 'job');
             toast.success("Job created");
@@ -407,16 +379,11 @@ export default function Index() {
         } else if (nameDialogMode === 'rename' && fileName) {
             await renameFile(projectId, fileName, finalName, type);
             toast.success("File renamed");
-            // Update selection if we renamed the selected file
-            if (selection?.kind === 'source' && selection.name === fileName) {
-                setSelection({ ...selection, name: finalName });
-            }
+            if (selection?.kind === 'source' && selection.name === fileName) setSelection({ ...selection, name: finalName });
         }
         await loadData();
         setIsNameDialogOpen(false);
-    } catch (err: any) {
-        toast.error(err.message || "Operation failed");
-    }
+    } catch (err: any) { toast.error(err.message || "Operation failed"); }
   };
 
   const submitDelete = async () => {
@@ -424,55 +391,35 @@ export default function Index() {
       try {
           await deleteFile(fileOpContext.projectId, fileOpContext.fileName, fileOpContext.type);
           toast.success("File deleted");
-          if (selection?.kind === 'source' && selection.name === fileOpContext.fileName) {
-              setSelection(null);
-          }
+          if (selection?.kind === 'source' && selection.name === fileOpContext.fileName) setSelection(null);
           await loadData();
-      } catch (err) {
-          toast.error("Delete failed");
-      } finally {
-          setIsDeleteAlertOpen(false);
-      }
+      } catch (err) { toast.error("Delete failed"); } finally { setIsDeleteAlertOpen(false); }
   };
 
   const handleRunJobFromSidebar = (jobName: string) => {
+     if (runMode === 'running') return; // Disable switching while running
      if (selection?.kind !== 'source' || selection.name !== jobName) {
          setSelection({ kind: 'source', type: 'job', name: jobName });
+         setRunMode('idle');
      }
   };
 
   const handleDeleteRun = async (projectId: string, envName: string, runId: string) => {
     try {
         await deleteRun(projectId, envName, runId);
-        
-        // Clean local state if we deleted the last run
-        if (lastRunId === runId) {
-            setLastRunId(null);
-        }
-
+        if (lastRunId === runId) setLastRunId(null);
         setProjects(prev => prev.map(p => {
           if (p.id !== projectId) return p;
-          // Filter out by checking matching environment AND matching timestamp
-          return {
-            ...p,
-            runs: p.runs.filter(r => !(r.timestamp === runId && r.environments[0].name === envName))
-          };
+          return { ...p, runs: p.runs.filter(r => !(r.timestamp === runId && r.environments[0].name === envName)) };
         }));
-        
         toast.success("Run deleted successfully");
-        if (selection?.kind === 'run' && selection.runId === runId) {
-          setSelection(null);
-        }
-        // Force reload to ensure everything is consistent
+        if (selection?.kind === 'run' && selection.runId === runId) setSelection(null);
         loadData();
-    } catch (err) {
-        toast.error("Failed to delete run");
-    }
+    } catch (err) { toast.error("Failed to delete run"); }
   };
 
   const handleContentChange = (newContent: string) => {
     if (!selectedProject || !selection || selection.kind === 'run') return;
-
     updateFileContent(selectedProject.id, selection.name, selection.type, newContent);
   };
 
@@ -480,24 +427,15 @@ export default function Index() {
     const newProjects = projects.map(p => {
         if (p.id !== projectId) return p;
         if (type === 'job') {
-          return {
-            ...p,
-            jobs: p.jobs.map(j => j.name === fileName ? { ...j, content: newContent } : j)
-          };
+          return { ...p, jobs: p.jobs.map(j => j.name === fileName ? { ...j, content: newContent } : j) };
         } else {
-          return {
-            ...p,
-            scripts: p.scripts.map(s => s.name === fileName ? { ...s, content: newContent } : s)
-          };
+          return { ...p, scripts: p.scripts.map(s => s.name === fileName ? { ...s, content: newContent } : s) };
         }
       });
       setProjects(newProjects);
-  
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
-          saveFile(projectId, fileName, newContent, type)
-              .then(() => {})
-              .catch(() => toast.error("Failed to save changes"));
+          saveFile(projectId, fileName, newContent, type).then(() => {}).catch(() => toast.error("Failed to save changes"));
       }, 1000);
   };
 
@@ -507,23 +445,17 @@ export default function Index() {
 
   const handleJobOverrideChange = (key: string, value: string | undefined) => {
       if (!selectedProject || !selection || selection.kind !== 'source' || selection.type !== 'job') return;
-
       const jobContent = selectedProject.jobs.find(j => j.name === selection.name)?.content || "";
       const lines = jobContent.split('\n');
-      
       let newLines: string[] = [];
       let found = false;
-      
       if (value === undefined) {
-          // Delete
           newLines = lines.filter(line => {
              const trimmed = line.trim();
-             // Keep comments
              if (trimmed.startsWith('#')) return true;
              return trimmed.split('=')[0].trim() !== key;
           });
       } else {
-          // Update or Add
           newLines = lines.map(line => {
              const trimmed = line.trim();
              if (!trimmed.startsWith('#') && trimmed.split('=')[0].trim() === key) {
@@ -534,7 +466,6 @@ export default function Index() {
           });
           if (!found) newLines.push(`${key}=${value}`);
       }
-
       updateFileContent(selectedProject.id, selection.name, 'job', newLines.join('\n'));
   };
 
@@ -549,40 +480,28 @@ export default function Index() {
           setOriginalEnvFiles(prev => ({ ...prev, [environment]: envFiles[environment] }));
           toast.success("Environment saved successfully");
           setIsEnvSaveDialogOpen(false);
-      } catch (e) {
-          toast.error("Failed to save environment file");
-      }
+      } catch (e) { toast.error("Failed to save environment file"); }
   };
 
   const toggleCurrentJobPermission = async () => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return;
-      
       const newPermissions = JSON.parse(JSON.stringify(permissions));
       if (!newPermissions[selectedProjectId]) newPermissions[selectedProjectId] = {};
       if (!newPermissions[selectedProjectId][selection.name]) newPermissions[selectedProjectId][selection.name] = {};
-      
       const currentVal = newPermissions[selectedProjectId][selection.name][environment];
       newPermissions[selectedProjectId][selection.name][environment] = !currentVal;
-      
       try {
           await savePermissions(newPermissions);
           setPermissions(newPermissions);
-          if (!currentVal) {
-              toast.success(`Enabled ${selection.name} in ${environment}`);
-          } else {
-              toast.info(`Disabled ${selection.name} in ${environment}`);
-          }
-      } catch (e) {
-          toast.error("Failed to save permission change");
-      }
+          if (!currentVal) toast.success(`Enabled ${selection.name} in ${environment}`);
+          else toast.info(`Disabled ${selection.name} in ${environment}`);
+      } catch (e) { toast.error("Failed to save permission change"); }
   };
 
   const getCurrentFileContent = () => {
     if (!selectedProject || !selection) return "";
     if (selection.kind === 'source') {
-      if (selection.type === 'job') {
-        return selectedProject.jobs.find(j => j.name === selection.name)?.content || "";
-      }
+      if (selection.type === 'job') return selectedProject.jobs.find(j => j.name === selection.name)?.content || "";
       return selectedProject.scripts.find(s => s.name === selection.name)?.content || "";
     } else {
       const run = selectedProject.runs.find(r => r.id === selection.runId);
@@ -601,20 +520,18 @@ export default function Index() {
 
   const executeRunSequence = async (projectId: string, jobName: string, action: RunAction, options: RunOptions) => {
     try {
-        // 1. If retrying dry run OR switching to wet run, delete previous dry run if it exists
         if ((action === 'retry-dry' || action === 'wet') && lastRunId) {
             await deleteRun(projectId, environment, lastRunId);
         }
 
-        // 2. Create new run
         const runId = await createRun(projectId, jobName, environment, options);
         
-        // 3. Update state
         setLastRunId(runId);
-        
-        // 4. Refresh data
-        const p = await fetchProjects();
-        setProjects(p);
+        setActiveRunStatus('running');
+        setRunMode('running');
+        setLiveReport("");
+        setLiveLog("");
+        setActiveRunType(action === 'wet' ? 'wet' : 'dry');
 
         toast.success(action === 'wet' ? "Wet Run Started" : "Dry Run Started", {
           description: `Run ID: ${runId}`,
@@ -633,21 +550,11 @@ export default function Index() {
 
   const handleRunRequest = async (action: RunAction, options: RunOptions) => {
     if (!selectedProjectId) return;
-    
-    // Safety check for permissions
-    if (!isCurrentJobEnabled) {
-        toast.error(`Job is disabled in ${environment}`);
-        return;
-    }
-    
+    if (!isCurrentJobEnabled) { toast.error(`Job is disabled in ${environment}`); return; }
     let jobName = '';
-    if (selection?.kind === 'source' && selection.type === 'job') {
-        jobName = selection.name;
-    } else {
-        jobName = (pendingRunJobName || ""); 
-    }
+    if (selection?.kind === 'source' && selection.type === 'job') jobName = selection.name;
+    else jobName = (pendingRunJobName || ""); 
     
-    // Check Password
     if (!hasPassword) {
         setPendingRunOptions(options);
         setPendingRunJobName(jobName);
@@ -660,15 +567,15 @@ export default function Index() {
   };
 
   const handlePasswordConfirm = (password: string, remember: boolean) => {
-    if (remember) {
-        setSessionPasswords(prev => ({ ...prev, [passwordKey]: password }));
-    }
+    if (remember) setSessionPasswords(prev => ({ ...prev, [passwordKey]: password }));
     if (pendingRunOptions && pendingRunJobName && pendingRunAction && selectedProjectId) {
         const finalOptions = { ...pendingRunOptions, password };
         executeRunSequence(selectedProjectId, pendingRunJobName, pendingRunAction, finalOptions);
-    } else {
-        toast.success("Password updated in memory");
-    }
+    } else { toast.success("Password updated in memory"); }
+  };
+
+  const handleReviewComplete = () => {
+      setRunMode('idle');
   };
 
   const isJob = selection?.kind === 'source' && selection.type === 'job';
@@ -678,15 +585,12 @@ export default function Index() {
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
   const isReport = selection?.kind === 'run' && selection.category === 'reports';
   const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
-
   const currentJobPermissions = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return undefined;
       return permissions[selectedProjectId]?.[selection.name];
   }, [permissions, selectedProjectId, selection]);
 
-  if (loading) {
-      return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
-  }
+  if (loading) return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
 
   return (
     <div className="h-screen w-full flex flex-col bg-background overflow-hidden">
@@ -700,27 +604,55 @@ export default function Index() {
       
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT COLUMN: SIDEBAR */}
-        <ProjectSidebar 
-          projects={projects} 
-          selectedProjectId={selectedProjectId} 
-          onSelectProject={handleSelectProject}
-          selection={selection}
-          onSelectFile={setSelection}
-          onDeleteRun={handleDeleteRun}
-          onCreateJob={handleCreateJob}
-          onRunJob={handleRunJobFromSidebar}
-          onCopyFile={handleCopyFile}
-          onRenameFile={handleRenameFile}
-          onDeleteFile={handleDeleteFile}
-          onMoveFile={handleMoveFile}
-          permissions={permissions}
-          currentEnv={environment}
-        />
+        <div className={cn("transition-all duration-300", runMode !== 'idle' ? "opacity-50 pointer-events-none" : "")}>
+            <ProjectSidebar 
+            projects={projects} 
+            selectedProjectId={selectedProjectId} 
+            onSelectProject={handleSelectProject}
+            selection={selection}
+            onSelectFile={setSelection}
+            onDeleteRun={handleDeleteRun}
+            onCreateJob={handleCreateJob}
+            onRunJob={handleRunJobFromSidebar}
+            onCopyFile={handleCopyFile}
+            onRenameFile={handleRenameFile}
+            onDeleteFile={handleDeleteFile}
+            onMoveFile={handleMoveFile}
+            permissions={permissions}
+            currentEnv={environment}
+            />
+        </div>
 
-        {/* MIDDLE COLUMN: EDITOR */}
+        {/* MIDDLE COLUMN: EDITOR or RUNNING VIEW */}
         {selectedProject ? (
-          <div className="flex-1 flex flex-col min-w-0 bg-muted/10 border-r border-border">
-                {selection ? (
+          <div className="flex-1 flex flex-col min-w-0 bg-muted/10 border-r border-border border-l">
+                {/* RUNNING MODE VIEW */}
+                {(runMode === 'running' || runMode === 'review') ? (
+                    <div className="flex-1 flex flex-col overflow-hidden relative animate-in fade-in slide-in-from-bottom-4">
+                         <div className="flex-1 flex overflow-hidden">
+                             {/* LEFT: Live Report */}
+                             <div className="flex-1 flex flex-col border-r border-border">
+                                <ReportViewer 
+                                    content={liveReport} 
+                                    fileName={activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt'} 
+                                />
+                             </div>
+                             {/* RIGHT: Live Log */}
+                             <div className="w-[480px] flex flex-col">
+                                <LogViewer 
+                                    content={liveLog} 
+                                    title={activeRunType === 'wet' ? 'wet-output.log' : 'dry-output.log'}
+                                />
+                             </div>
+                         </div>
+                         <RunningFooter 
+                            status={activeRunStatus} 
+                            onReview={handleReviewComplete}
+                         />
+                    </div>
+                ) : (
+                /* NORMAL EDITOR VIEW */
+                selection ? (
                 <div className="flex-1 flex flex-col overflow-hidden relative">
                     <div className="flex-1 flex flex-col overflow-hidden">
                         {isJob && (
@@ -738,7 +670,6 @@ export default function Index() {
                             </div>
                         )}
                         
-                        {/* Run Options View (Read Only) */}
                         {isRunOptions && (
                             <div className="flex-1 flex flex-col overflow-hidden bg-background">
                                 <PropertiesEditor 
@@ -799,7 +730,7 @@ export default function Index() {
                     <p className="mb-4 text-sm">Select a source file to edit or a run artifact to inspect.</p>
                     </div>
                 </div>
-                )}
+                ))}
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground bg-dot-pattern">
@@ -809,113 +740,88 @@ export default function Index() {
           </div>
         )}
 
-        {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES - ALWAYS VISIBLE */}
-        <div className="w-[480px] bg-muted/40 flex flex-col border-l border-border">
-            {/* 1. Env Properties Editor */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <PropertiesEditor 
-                    title={isJob ? `Overrides for ${environment}` : `Environment: ${environment}.props`}
-                    baseContent={envFiles[environment] || ""}
-                    overrideContent={isJob ? getCurrentFileContent() : null}
-                    onBaseChange={handleEnvFileChange}
-                    onOverrideChange={handleJobOverrideChange}
-                    readOnly={isReadOnly}
-                />
+        {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES - ONLY VISIBLE IN IDLE MODE */}
+        {runMode === 'idle' && (
+            <div className="w-[480px] bg-muted/40 flex flex-col border-l border-border">
+                {/* 1. Env Properties Editor */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <PropertiesEditor 
+                        title={isJob ? `Overrides for ${environment}` : `Environment: ${environment}.props`}
+                        baseContent={envFiles[environment] || ""}
+                        overrideContent={isJob ? getCurrentFileContent() : null}
+                        onBaseChange={handleEnvFileChange}
+                        onOverrideChange={handleJobOverrideChange}
+                        readOnly={isReadOnly}
+                    />
 
-                {/* Unsaved Env Changes Warning (Only in global mode) */}
-                {!isJob && isEnvDirty && (
-                    <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
-                        <div className="text-xs text-amber-800 flex items-start gap-2">
-                            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                            <div>
-                                <div className="font-semibold">Unsaved Changes</div>
-                                <div className="opacity-90">Global environment changes must be saved to take effect.</div>
+                    {/* Unsaved Env Changes Warning */}
+                    {!isJob && isEnvDirty && (
+                        <div className="p-4 border-t bg-amber-50/80 space-y-3 shrink-0">
+                            <div className="text-xs text-amber-800 flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                <div>
+                                    <div className="font-semibold">Unsaved Changes</div>
+                                    <div className="opacity-90">Global environment changes must be saved to take effect.</div>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button onClick={handleResetEnv} size="sm" variant="outline" className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100">
+                                    <RotateCcw className="mr-2 h-4 w-4" /> Reset
+                                </Button>
+                                <Button onClick={() => setIsEnvSaveDialogOpen(true)} size="sm" className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600">
+                                    <Save className="mr-2 h-4 w-4" /> Save
+                                </Button>
                             </div>
                         </div>
-                        <div className="flex gap-2">
-                            <Button 
-                                onClick={handleResetEnv} 
-                                size="sm" 
-                                variant="outline"
-                                className="flex-1 border-amber-300 text-amber-900 hover:bg-amber-100"
-                            >
-                                <RotateCcw className="mr-2 h-4 w-4" /> Reset
-                            </Button>
-                            <Button 
-                                onClick={() => setIsEnvSaveDialogOpen(true)} 
-                                size="sm" 
-                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
-                            >
-                                <Save className="mr-2 h-4 w-4" /> Save
-                            </Button>
+                    )}
+                </div>
+
+                {/* 2. Authentication */}
+                {!isJob && (
+                    <div className="border-t bg-muted/10 p-4 shrink-0">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-sm flex items-center gap-2">
+                                <KeyRound className="h-4 w-4 text-muted-foreground" />
+                                Authentication
+                            </h3>
+                            <div className={cn(
+                                "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
+                                hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
+                            )}>
+                                {hasPassword ? "Authorized" : "Unauthorized"}
+                            </div>
                         </div>
+                        <div className="text-xs text-muted-foreground mb-3">
+                            User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
+                            <br/>
+                            {hasPassword ? "Password stored in session memory." : "No password currently stored for this session."}
+                        </div>
+                        <Button 
+                            variant={hasPassword ? "outline" : "secondary"} 
+                            size="sm" 
+                            className="w-full"
+                            onClick={() => { setPendingRunOptions(null); setIsPasswordDialogOpen(true); }}
+                        >
+                            {hasPassword ? (<><Unlock className="mr-2 h-3 w-3" /> Update Password</>) : (<><Lock className="mr-2 h-3 w-3" /> Enter Password</>)}
+                        </Button>
                     </div>
                 )}
             </div>
-
-            {/* 2. Authentication (Only visible when NO job is selected, per requirements) */}
-            {!isJob && (
-                <div className="border-t bg-muted/10 p-4 shrink-0">
-                    <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-sm flex items-center gap-2">
-                            <KeyRound className="h-4 w-4 text-muted-foreground" />
-                            Authentication
-                        </h3>
-                        <div className={cn(
-                            "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
-                            hasPassword ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"
-                        )}>
-                            {hasPassword ? "Authorized" : "Unauthorized"}
-                        </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground mb-3">
-                        User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
-                        <br/>
-                        {hasPassword 
-                            ? "Password stored in session memory." 
-                            : "No password currently stored for this session."
-                        }
-                    </div>
-                    <Button 
-                        variant={hasPassword ? "outline" : "secondary"} 
-                        size="sm" 
-                        className="w-full"
-                        onClick={() => {
-                            setPendingRunOptions(null); 
-                            setIsPasswordDialogOpen(true);
-                        }}
-                    >
-                        {hasPassword ? (
-                            <><Unlock className="mr-2 h-3 w-3" /> Update Password</>
-                        ) : (
-                            <><Lock className="mr-2 h-3 w-3" /> Enter Password</>
-                        )}
-                    </Button>
-                </div>
-            )}
-        </div>
+        )}
       </div>
       
       <PasswordDialog 
         open={isPasswordDialogOpen}
-        onOpenChange={(open) => {
-            setIsPasswordDialogOpen(open);
-            if (!open && pendingRunOptions) {
-                setPendingRunOptions(null);
-            }
-        }}
+        onOpenChange={(open) => { setIsPasswordDialogOpen(open); if (!open && pendingRunOptions) setPendingRunOptions(null); }}
         envName={environment}
         userName={currentUserName}
         onConfirm={handlePasswordConfirm}
       />
-
       <AlertDialog open={isEnvSaveDialogOpen} onOpenChange={setIsEnvSaveDialogOpen}>
         <AlertDialogContent>
             <AlertDialogHeader>
                 <AlertDialogTitle>Save Environment Changes?</AlertDialogTitle>
-                <AlertDialogDescription>
-                    You are about to modify the <strong>{environment}</strong> environment configuration.
-                </AlertDialogDescription>
+                <AlertDialogDescription>You are about to modify the <strong>{environment}</strong> environment configuration.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -923,8 +829,6 @@ export default function Index() {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Name Input Dialog for Create/Rename/Copy */}
       <Dialog open={isNameDialogOpen} onOpenChange={setIsNameDialogOpen}>
           <DialogContent>
               <DialogHeader>
@@ -935,17 +839,8 @@ export default function Index() {
                   </DialogTitle>
               </DialogHeader>
               <div className="py-4">
-                  <Input 
-                    value={nameDialogValue} 
-                    onChange={(e) => setNameDialogValue(e.target.value)} 
-                    placeholder="Enter file name..."
-                    autoFocus
-                  />
-                  {nameDialogMode === 'rename' && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                          Tip: Use prefixes like <code>01-</code>, <code>02-</code> to re-order files.
-                      </p>
-                  )}
+                  <Input value={nameDialogValue} onChange={(e) => setNameDialogValue(e.target.value)} placeholder="Enter file name..." autoFocus />
+                  {nameDialogMode === 'rename' && <p className="text-xs text-muted-foreground mt-2">Tip: Use prefixes like <code>01-</code>, <code>02-</code> to re-order files.</p>}
               </div>
               <DialogFooter>
                   <Button variant="outline" onClick={() => setIsNameDialogOpen(false)}>Cancel</Button>
@@ -953,15 +848,11 @@ export default function Index() {
               </DialogFooter>
           </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation Alert */}
       <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
         <AlertDialogContent>
             <AlertDialogHeader>
                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                    This will permanently delete <strong>{fileOpContext?.fileName}</strong>. This action cannot be undone.
-                </AlertDialogDescription>
+                <AlertDialogDescription>This will permanently delete <strong>{fileOpContext?.fileName}</strong>. This action cannot be undone.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -969,7 +860,6 @@ export default function Index() {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
