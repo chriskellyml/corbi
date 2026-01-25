@@ -92,7 +92,8 @@ if (!existsSync(PERMISSIONS_FILE)) {
 const upload = multer({ dest: UPLOADS_DIR });
 
 // In-memory status tracker
-const activeRuns = new Map<string, string>(); // runId -> status ('running' | 'completed' | 'error')
+// Mapping: runId -> { status, process }
+const activeRuns = new Map<string, { status: string, process?: any }>(); 
 
 // Helper to safely resolve paths
 const safePath = (base: string, sub: string) => {
@@ -112,7 +113,6 @@ async function getScriptsRecursively(dir: string, baseDir: string): Promise<any[
         if (entry.isDirectory()) {
             results = results.concat(await getScriptsRecursively(fullPath, baseDir));
         } else if (entry.isFile() && /\.(xqy|js|sjs|txt)$/.test(entry.name)) {
-            // Use forward slashes for consistency across platforms
             const relativeName = path.relative(baseDir, fullPath).split(path.sep).join('/');
             results.push({
                 name: relativeName,
@@ -159,65 +159,53 @@ app.get('/api/projects', async (req, res) => {
     const projects = await Promise.all(projectDirs.map(async (pName) => {
       const pPath = path.join(PROJECTS_DIR, pName);
       
-      // Get Jobs
-      const jobFiles = (await fs.readdir(pPath))
-        .filter(f => f.endsWith('.job'));
-      
+      const jobFiles = (await fs.readdir(pPath)).filter(f => f.endsWith('.job'));
       const jobs = await Promise.all(jobFiles.map(async name => ({
         name,
         type: 'job',
         content: await fs.readFile(path.join(pPath, name), 'utf-8')
       })));
 
-      // Get Scripts (Recursive)
       const scriptsDir = path.join(pPath, 'scripts');
       let scripts: any[] = [];
       if (existsSync(scriptsDir)) {
          scripts = await getScriptsRecursively(scriptsDir, scriptsDir);
       }
 
-      // Get Runs (Nested Structure: runs/<project>/<env>/<timestamp>)
       const pRunsDir = path.join(RUNS_DIR, pName);
       let runs: any[] = [];
       
       if (existsSync(pRunsDir)) {
-          // 1. Get Environment Directories
           const envDirs = (await fs.readdir(pRunsDir, { withFileTypes: true }))
               .filter(d => d.isDirectory())
               .map(d => d.name);
 
           for (const envName of envDirs) {
               const envRunsPath = path.join(pRunsDir, envName);
-              // 2. Get Timestamp Directories per Env
               const runTimestamps = (await fs.readdir(envRunsPath)).filter(f => !f.startsWith('.'));
               
               const envRuns = await Promise.all(runTimestamps.map(async (rTimestamp) => {
                   const rPath = path.join(envRunsPath, rTimestamp);
                   if (!(await fs.stat(rPath)).isDirectory()) return null;
 
-                  // Read options
                   let options = '';
                   try { options = await fs.readFile(path.join(rPath, 'job.options'), 'utf-8'); } catch(e) {}
                   
-                  // Read export
                   let exportContent = '';
                   try { exportContent = await fs.readFile(path.join(rPath, 'export.csv'), 'utf-8'); } catch(e) {}
 
-                  // Logs
                   const logs: any[] = [];
                   const logFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.log'));
                   for (const lf of logFiles) {
                       logs.push({ name: lf, content: await fs.readFile(path.join(rPath, lf), 'utf-8') });
                   }
                   
-                  // Reports (e.g. dry-report.txt, wet-report.txt)
                   const reports: any[] = [];
                   const reportFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('report.txt'));
                   for (const rf of reportFiles) {
                       reports.push({ name: rf, content: await fs.readFile(path.join(rPath, rf), 'utf-8') });
                   }
 
-                  // Scripts (snapshot)
                   const runScriptsDir = path.join(rPath, 'scripts');
                   let runScripts: any[] = [];
                   if (existsSync(runScriptsDir)) {
@@ -225,8 +213,6 @@ app.get('/api/projects', async (req, res) => {
                   }
 
                   return {
-                      // We make ID unique by combining env and timestamp, though timestamp is usually unique enough,
-                      // the UI filters by env so collision isn't visible, but for keys it's safer.
                       id: `${envName}/${rTimestamp}`,
                       timestamp: rTimestamp,
                       isDryRun: options.includes('DRY-RUN=true'),
@@ -240,12 +226,10 @@ app.get('/api/projects', async (req, res) => {
                       }]
                   };
               }));
-              
               runs = runs.concat(envRuns.filter(Boolean));
           }
       }
       
-      // Sort runs by timestamp descending (newest first)
       runs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
       return {
@@ -332,17 +316,14 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // POST /api/save
 app.post('/api/save', async (req, res) => {
     const { projectId, fileName, content, type } = req.body;
-    // Type: 'job', 'script', 'env', 'support-uris', 'support-process'
-    
     try {
         let targetPath;
         if (type === 'env') {
-            targetPath = safePath(ENV_DIR, fileName); // fileName is 'ENV.props'
+            targetPath = safePath(ENV_DIR, fileName);
         } else if (type === 'job') {
             targetPath = safePath(path.join(PROJECTS_DIR, projectId), fileName);
         } else if (type === 'script') {
             targetPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), fileName);
-            // Ensure dir exists for nested scripts
             await fs.mkdir(path.dirname(targetPath), { recursive: true });
         } else if (type === 'support-uris') {
             targetPath = safePath(URIS_DIR, fileName);
@@ -370,7 +351,6 @@ app.post('/api/files/copy', async (req, res) => {
         } else if (type === 'script') {
             sourcePath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), sourceName);
             targetPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), targetName);
-            // Ensure dir exists
             await fs.mkdir(path.dirname(targetPath), { recursive: true });
         } else {
             return res.status(400).json({ error: 'Invalid type' });
@@ -396,7 +376,6 @@ app.post('/api/files/rename', async (req, res) => {
         } else if (type === 'script') {
             oldPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), oldName);
             newPath = safePath(path.join(PROJECTS_DIR, projectId, 'scripts'), newName);
-            // Ensure dir exists
             await fs.mkdir(path.dirname(newPath), { recursive: true });
         } else if (type === 'env') {
             oldPath = safePath(ENV_DIR, oldName);
@@ -442,13 +421,15 @@ app.post('/api/run', async (req, res) => {
         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
         const jobNameNoExt = jobName.replace(/\.job$/, '');
         
-        // Prepare Environment Variables for Password
+        // Ensure directory exists immediately so we can stream logs to it
+        const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
+        await fs.mkdir(runDir, { recursive: true });
+
         const envVarName = `PASSWD_${envName.replace(/-/g, '_')}`;
         const envVars = { ...process.env, [envVarName]: password || '' };
 
-        // Async Execution Function (Detached)
         const executeAsync = () => {
-             // 1. Dry Run (Scaffold)
+             // Setup Dry Run
              const dryArgs = [
                  `./run.sh`,
                  `--env=${envName}`,
@@ -460,18 +441,29 @@ app.post('/api/run', async (req, res) => {
                  '--skip-proceed-confirmation'
              ].filter(Boolean);
 
+             const dryLogPath = path.join(runDir, 'dry-output.log');
+             const dryStream = createWriteStream(dryLogPath, { flags: 'a' });
+
              log(`[${timestamp}] Spawning Dry Run: ${dryArgs.join(' ')}`);
              
+             // Spawn with pipe to capture output
              const dryChild = spawn(dryArgs[0], dryArgs.slice(1), { 
                  cwd: WORKING_DIR, 
                  env: envVars,
-                 stdio: 'ignore' // We rely on the script writing to logs, or we can pipe later if needed
+                 stdio: ['ignore', 'pipe', 'pipe']
              });
+
+             // Pipe output to file
+             if (dryChild.stdout) dryChild.stdout.pipe(dryStream);
+             if (dryChild.stderr) dryChild.stderr.pipe(dryStream);
+
+             // Store process for stopping
+             activeRuns.set(timestamp, { status: 'running', process: dryChild });
 
              dryChild.on('close', (code) => {
                  log(`[${timestamp}] Dry run exited with code ${code}`);
                  
-                 // 2. If Wet Run requested and Dry Run succeeeded
+                 // Chain Wet Run if requested
                  if (code === 0 && !options.dryRun) {
                      const wetArgs = [
                         `./run.sh`,
@@ -484,28 +476,35 @@ app.post('/api/run', async (req, res) => {
                         '--skip-proceed-confirmation'
                      ].filter(Boolean);
                      
+                     const wetLogPath = path.join(runDir, 'wet-output.log');
+                     const wetStream = createWriteStream(wetLogPath, { flags: 'a' });
+
                      log(`[${timestamp}] Spawning Wet Run: ${wetArgs.join(' ')}`);
                      const wetChild = spawn(wetArgs[0], wetArgs.slice(1), {
                          cwd: WORKING_DIR,
                          env: envVars,
-                         stdio: 'ignore'
+                         stdio: ['ignore', 'pipe', 'pipe']
                      });
+
+                     if (wetChild.stdout) wetChild.stdout.pipe(wetStream);
+                     if (wetChild.stderr) wetChild.stderr.pipe(wetStream);
+
+                     // Update stored process
+                     activeRuns.set(timestamp, { status: 'running', process: wetChild });
 
                      wetChild.on('close', (wCode) => {
                          log(`[${timestamp}] Wet run exited with code ${wCode}`);
-                         activeRuns.set(timestamp, wCode === 0 ? 'completed' : 'error');
+                         activeRuns.set(timestamp, { status: wCode === 0 ? 'completed' : 'error' });
                      });
                  } else {
-                     activeRuns.set(timestamp, code === 0 ? 'completed' : 'error');
+                     activeRuns.set(timestamp, { status: code === 0 ? 'completed' : 'error' });
                  }
              });
         };
 
-        // Start execution in background
-        activeRuns.set(timestamp, 'running');
+        activeRuns.set(timestamp, { status: 'running' });
         executeAsync();
         
-        // Return immediately
         res.json({ success: true, runId: timestamp });
 
     } catch (error) {
@@ -514,13 +513,27 @@ app.post('/api/run', async (req, res) => {
     }
 });
 
+// POST /api/run/:projectId/:envName/:runId/stop
+app.post('/api/run/:projectId/:envName/:runId/stop', (req, res) => {
+    const { runId } = req.params;
+    const runState = activeRuns.get(runId);
+    if (runState && runState.status === 'running' && runState.process) {
+        log(`Stopping run ${runId} (PID ${runState.process.pid})`);
+        try {
+            runState.process.kill('SIGTERM'); 
+        } catch(e) {
+            console.error("Failed to kill process", e);
+        }
+        activeRuns.set(runId, { status: 'error' });
+    }
+    res.json({ success: true });
+});
+
 // GET /api/run/:projectId/:envName/:runId/status
 app.get('/api/run/:projectId/:envName/:runId/status', (req, res) => {
     const { runId } = req.params;
-    const status = activeRuns.get(runId);
-    if (!status) {
-        // If not in memory, check if folder exists - if so, assume completed (persisted)
-        // If not, assume unknown/error
+    const runState = activeRuns.get(runId);
+    if (!runState) {
         const { projectId, envName } = req.params;
         const runPath = path.join(RUNS_DIR, projectId, envName, runId);
         if (existsSync(runPath)) {
@@ -528,11 +541,10 @@ app.get('/api/run/:projectId/:envName/:runId/status', (req, res) => {
         }
         return res.json({ status: 'unknown' });
     }
-    res.json({ status });
+    res.json({ status: runState.status });
 });
 
 // GET /api/run/:projectId/:envName/:runId/file/:filename
-// Used for polling specific files (logs/reports)
 app.get('/api/run/:projectId/:envName/:runId/file/:filename', async (req, res) => {
     const { projectId, envName, runId, filename } = req.params;
     try {
@@ -541,7 +553,6 @@ app.get('/api/run/:projectId/:envName/:runId/file/:filename', async (req, res) =
             const content = await fs.readFile(filePath, 'utf-8');
             res.json({ content });
         } else {
-            // Return empty if not found yet (might be created soon)
             res.json({ content: '' });
         }
     } catch (e) {
@@ -556,10 +567,8 @@ app.delete('/api/run/:projectId/:envName/:runId', async (req, res) => {
         const runPath = safePath(path.join(RUNS_DIR, projectId, envName), runId);
         await fs.rm(runPath, { recursive: true, force: true });
         
-        // Cleanup memory status
         activeRuns.delete(runId);
 
-        // Optional: Clean up env folder if empty
         try {
             const envPath = path.dirname(runPath);
             const files = await fs.readdir(envPath);

@@ -159,6 +159,13 @@ export async function createRun(
   return data.runId;
 }
 
+export async function stopRun(projectId: string, envName: string, runId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}/stop`, {
+        method: 'POST'
+    });
+    if (!res.ok) throw new Error("Failed to stop run");
+}
+
 export async function getRunStatus(projectId: string, envName: string, runId: string): Promise<string> {
     const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}/status`);
     if (!res.ok) throw new Error("Failed to get run status");

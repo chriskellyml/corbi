@@ -10,7 +10,7 @@ import { RunningFooter } from "../components/corb/RunningFooter";
 import { LogViewer } from "../components/corb/LogViewer";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -125,13 +125,6 @@ export default function Index() {
                 setActiveRunStatus(status);
 
                 // 2. Fetch Files
-                // Determine filenames based on run type
-                // Actually we don't know easily if it's currently dry or wet phase if we just fire "wet" action which runs both.
-                // But typically users care about the *latest* output.
-                // If it's a dry run request -> dry-report.txt
-                // If it's a wet run request -> wet-report.txt (but dry-report might exist first)
-                // Let's assume files are dry-report.txt / dry-output.log OR wet-report.txt / wet-output.log
-                
                 const prefix = activeRunType === 'wet' ? 'wet' : 'dry';
                 
                 const [report, log] = await Promise.all([
@@ -578,6 +571,16 @@ export default function Index() {
       setRunMode('idle');
   };
 
+  const handleStopRun = async () => {
+      if (!lastRunId || !selectedProjectId) return;
+      try {
+          await stopRun(selectedProjectId, environment, lastRunId);
+          toast.warning("Run stop requested...");
+      } catch (e) {
+          toast.error("Failed to stop run");
+      }
+  };
+
   const isJob = selection?.kind === 'source' && selection.type === 'job';
   const isRunOptions = selection?.kind === 'run' && selection.fileName === 'job.options';
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
@@ -648,6 +651,7 @@ export default function Index() {
                          <RunningFooter 
                             status={activeRunStatus} 
                             onReview={handleReviewComplete}
+                            onStop={handleStopRun}
                          />
                     </div>
                 ) : (
