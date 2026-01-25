@@ -1,4 +1,4 @@
-import { Project, PermissionMap } from "../types";
+import { Project, PermissionMap, EnvData } from "../types";
 
 const API_BASE = "http://localhost:3001/api";
 
@@ -8,7 +8,7 @@ export async function fetchProjects(): Promise<Project[]> {
   return res.json();
 }
 
-export async function fetchEnvFiles(): Promise<Record<string, string>> {
+export async function fetchEnvFiles(): Promise<Record<string, EnvData>> {
   const res = await fetch(`${API_BASE}/envs`);
   if (!res.ok) throw new Error("Failed to fetch envs");
   return res.json();

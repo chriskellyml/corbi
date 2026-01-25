@@ -9,7 +9,7 @@ import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { RunningFooter } from "../components/corb/RunningFooter";
 import { LogViewer } from "../components/corb/LogViewer";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
-import { Project, ProjectRun, PermissionMap } from "../types";
+import { Project, ProjectRun, PermissionMap, EnvData } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -40,8 +40,8 @@ export default function Index() {
 
   // Data state
   const [projects, setProjects] = useState<Project[]>([]);
-  const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
-  const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, string>>({});
+  const [envFiles, setEnvFiles] = useState<Record<string, EnvData>>({});
+  const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, EnvData>>({});
   const [permissions, setPermissions] = useState<PermissionMap>({});
   const [loading, setLoading] = useState(true);
 
@@ -155,8 +155,8 @@ export default function Index() {
 
   const sortedEnvKeys = useMemo(() => Object.keys(envFiles).sort(), [envFiles]);
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const currentUserName = (() => {
-    const content = envFiles[environment] || "";
+const currentUserName = (() => {
+    const content = envFiles[environment]?.content || "";
     const lines = content.split('\n');
     for (const line of lines) {
         const trimmed = line.trim();
@@ -170,7 +170,9 @@ export default function Index() {
     return 'unknown';
   })();
   const passwordKey = `${environment}:${currentUserName}`;
-  const hasPassword = !!sessionPasswords[passwordKey];
+  // If server says it has password, we consider it "authorized" for prompt skipping purposes
+  // OR if we have it in session memory
+  const hasPassword = !!sessionPasswords[passwordKey] || envFiles[environment]?.hasPassword === true;
 
   const isCurrentJobEnabled = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return false;
@@ -433,7 +435,13 @@ export default function Index() {
   };
 
   const handleEnvFileChange = (newContent: string) => {
-    setEnvFiles(prev => ({ ...prev, [environment]: newContent }));
+    setEnvFiles(prev => ({ 
+        ...prev, 
+        [environment]: { 
+            ...prev[environment], 
+            content: newContent 
+        } 
+    }));
   };
 
   const handleJobOverrideChange = (key: string, value: string | undefined) => {
@@ -463,14 +471,20 @@ export default function Index() {
   };
 
   const handleResetEnv = () => {
-    setEnvFiles(prev => ({ ...prev, [environment]: originalEnvFiles[environment] }));
+    setEnvFiles(prev => ({ 
+        ...prev, 
+        [environment]: { ...originalEnvFiles[environment] } 
+    }));
     toast.info("Environment changes discarded");
   };
 
   const handleSaveEnv = async () => {
       try {
-          await saveFile(null, `${environment}.props`, envFiles[environment], 'env');
-          setOriginalEnvFiles(prev => ({ ...prev, [environment]: envFiles[environment] }));
+          const currentData = envFiles[environment];
+          if (!currentData) return;
+          
+          await saveFile(null, `${environment}.props`, currentData.content, 'env');
+          setOriginalEnvFiles(prev => ({ ...prev, [environment]: { ...currentData } }));
           toast.success("Environment saved successfully");
           setIsEnvSaveDialogOpen(false);
       } catch (e) { toast.error("Failed to save environment file"); }
@@ -500,13 +514,21 @@ export default function Index() {
       const run = selectedProject.runs.find(r => r.id === selection.runId);
       const env = run?.environments.find(e => e.name === selection.envName);
       if (!env) return "Error: Environment not found";
-      if (selection.category === 'root') {
-        if (selection.fileName === 'job.options') return env.options;
-        if (selection.fileName === 'export.csv') return env.export;
+      
+      switch (selection.category) {
+          case 'root':
+              if (selection.fileName === 'job.options') return env.options;
+              if (selection.fileName === 'export.csv') return env.export;
+              return "";
+          case 'logs':
+              return env.logs.find(f => f.name === selection.fileName)?.content || "";
+          case 'scripts':
+              return env.scripts.find(f => f.name === selection.fileName)?.content || "";
+          case 'reports':
+              return env.reports.find(f => f.name === selection.fileName)?.content || "";
+          default:
+              return "";
       }
-      if (selection.category === 'logs') return env.logs.find(f => f.name === selection.fileName)?.content || "";
-      if (selection.category === 'scripts') return env.scripts.find(f => f.name === selection.fileName)?.content || "";
-      if (selection.category === 'reports') return env.reports.find(f => f.name === selection.fileName)?.content || "";
     }
     return "";
   };
@@ -587,7 +609,7 @@ export default function Index() {
   const isReadOnly = selection?.kind === 'run';
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
   const isReport = selection?.kind === 'run' && selection.category === 'reports';
-  const isEnvDirty = envFiles[environment] !== originalEnvFiles[environment];
+  const isEnvDirty = envFiles[environment]?.content !== originalEnvFiles[environment]?.content;
   const currentJobPermissions = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return undefined;
       return permissions[selectedProjectId]?.[selection.name];
@@ -751,7 +773,7 @@ export default function Index() {
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <PropertiesEditor 
                         title={isJob ? `Overrides for ${environment}` : `Environment: ${environment}.props`}
-                        baseContent={envFiles[environment] || ""}
+                        baseContent={envFiles[environment]?.content || ""}
                         overrideContent={isJob ? getCurrentFileContent() : null}
                         onBaseChange={handleEnvFileChange}
                         onOverrideChange={handleJobOverrideChange}

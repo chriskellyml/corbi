@@ -35,6 +35,11 @@ export interface Project {
   runs: ProjectRun[];
 }
 
+export interface EnvData {
+    content: string;
+    hasPassword?: boolean;
+}
+
 export type Environment = string; 
 
 // Permissions: ProjectID -> JobName -> EnvName -> boolean

@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import fs from 'fs/promises';
-import { existsSync, mkdirSync, createWriteStream } from 'fs';
+import { existsSync, mkdirSync, createWriteStream, readFileSync } from 'fs';
 import path from 'path';
 import multer from 'multer';
 import { exec, spawn } from 'child_process';
@@ -39,6 +39,29 @@ function log(message: string) {
 }
 
 log(`Server started. Logging to ${logFilePath}`);
+
+// Load .env from WORKING_DIR if present
+const DOT_ENV_PATH = path.join(WORKING_DIR, '.env');
+log(`Checking for .env at: ${DOT_ENV_PATH}`); // ADDED LOG
+if (existsSync(DOT_ENV_PATH)) {
+    try {
+        const envContent = readFileSync(DOT_ENV_PATH, 'utf-8');
+        envContent.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) {
+                const [key, ...values] = trimmed.split('=');
+                if (key && values.length > 0) {
+                     // Basic cleaning of quotes if present
+                     const value = values.join('=').trim().replace(/^['"]|['"]$/g, '');
+                     process.env[key.trim()] = value;
+                }
+            }
+        });
+        log(`Loaded .env from ${DOT_ENV_PATH}`);
+    } catch (e) {
+        console.error("Failed to load .env:", e);
+    }
+}
 
 // Setup directories
 const PROJECTS_DIR = path.join(WORKING_DIR, 'src', 'projects');
@@ -254,10 +277,22 @@ app.get('/api/envs', async (req, res) => {
         if (!existsSync(ENV_DIR)) await fs.mkdir(ENV_DIR, { recursive: true });
         const files = await fs.readdir(ENV_DIR);
         const envs = {};
+        
+        // Load .env content once to check for passwords
+        const dotEnvContent = existsSync(DOT_ENV_PATH) ? readFileSync(DOT_ENV_PATH, 'utf-8') : '';
+        const loadedEnvVars = { ...process.env }; // Start with current process env
+
         for (const file of files) {
             if (file.endsWith('.props')) {
                 const name = file.replace('.props', '');
-                envs[name] = await fs.readFile(path.join(ENV_DIR, file), 'utf-8');
+                const content = await fs.readFile(path.join(ENV_DIR, file), 'utf-8');
+                
+                // Check if we have a password for this environment
+                const cleanEnvName = name.replace(/^\d+-/, '');
+                const envVarName = `PASSWD_${cleanEnvName.replace(/-/g, '_')}`;
+                const hasPassword = !!loadedEnvVars[envVarName];
+
+                envs[name] = { content, hasPassword };
             }
         }
         res.json(envs);
@@ -415,7 +450,9 @@ app.delete('/api/files', async (req, res) => {
 
 // POST /api/run
 app.post('/api/run', async (req, res) => {
+    log('Received request to /api/run'); // ADDED LOG
     const { projectId, jobName, envName, options, password } = req.body;
+    log(`Run params: project=${projectId}, job=${jobName}, env=${envName}`); // ADDED LOG
     
     try {
         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
@@ -425,8 +462,25 @@ app.post('/api/run', async (req, res) => {
         const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
         await fs.mkdir(runDir, { recursive: true });
 
-        const envVarName = `PASSWD_${envName.replace(/-/g, '_')}`;
-        const envVars = { ...process.env, [envVarName]: password || '' };
+        // Strip ordering prefix (e.g. "01-TEST" -> "TEST") for password lookup
+        const cleanEnvName = envName.replace(/^\d+-/, '');
+        const envVarName = `PASSWD_${cleanEnvName.replace(/-/g, '_')}`;
+
+        // Initialize envVars from process.env (which includes loaded .env)
+        const envVars = { ...process.env };
+        
+        // Only override/set if the user explicitly provided a password in the request
+        if (password && typeof password === 'string' && password.trim().length > 0) {
+            envVars[envVarName] = password;
+        }
+
+        // Log usage (redacted)
+        log(`Using password for ${envName} from ${envVars[envVarName] ? (password ? 'request body' : `environment variable ${envVarName}`) : 'NOWHERE (Missing)'}`);
+        if (envVars[envVarName]) {
+             log(`DEBUG: Password value for ${envVarName} is: "${envVars[envVarName]}"`);
+        } else {
+             log(`DEBUG: No password found for ${envVarName}`);
+        }
 
         const executeAsync = () => {
              // Setup Dry Run
