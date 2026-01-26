@@ -6,8 +6,7 @@ import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
 import { ReportViewer } from "../components/corb/ReportViewer";
 import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
-import { RunningFooter } from "../components/corb/RunningFooter";
-import { LogViewer } from "../components/corb/LogViewer";
+import { RunningView } from "../components/corb/RunningView";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap, EnvData } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
@@ -155,7 +154,7 @@ export default function Index() {
 
   const sortedEnvKeys = useMemo(() => Object.keys(envFiles).sort(), [envFiles]);
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-const currentUserName = (() => {
+  const currentUserName = (() => {
     const content = envFiles[environment]?.content || "";
     const lines = content.split('\n');
     for (const line of lines) {
@@ -197,10 +196,6 @@ const currentUserName = (() => {
     }
   };
 
-  // ... (Keep handleCreateJob, handleCopyFile, handleRenameFile, handleDeleteFile, handleMoveFile, handleMoveEnv, submitFileOp, submitDelete, handleRunJobFromSidebar, handleDeleteRun, handleContentChange, updateFileContent, handleEnvFileChange, handleJobOverrideChange, handleResetEnv, handleSaveEnv, toggleCurrentJobPermission, getCurrentFileContent)
-  // ... Copied logic for brevity, assuming they remain unchanged but included in final output ...
-  
-  // Re-implementing them here to ensure the file is complete
   const handleCreateJob = (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
     let nextNum = 1;
@@ -254,7 +249,6 @@ const currentUserName = (() => {
   };
 
   const handleMoveFile = async (projectId: string, fileName: string, direction: 'up' | 'down', type: 'job' | 'script') => {
-      // (Keep existing implementation)
       const project = projects.find(p => p.id === projectId);
       if (!project) return;
       const getFiles = () => type === 'job' ? project.jobs : project.scripts;
@@ -311,7 +305,6 @@ const currentUserName = (() => {
   };
 
   const handleMoveEnv = async (envName: string, direction: 'left' | 'right') => {
-      // (Keep existing implementation)
       let sorted = [...sortedEnvKeys];
       const needsNormalization = sorted.some(k => !/^\d+-/.test(k));
       if (needsNormalization) {
@@ -653,29 +646,14 @@ const currentUserName = (() => {
           <div className="flex-1 flex flex-col min-w-0 bg-muted/10 border-r border-border border-l">
                 {/* RUNNING MODE VIEW */}
                 {(runMode === 'running' || runMode === 'review') ? (
-                    <div className="flex-1 flex flex-col overflow-hidden relative animate-in fade-in slide-in-from-bottom-4">
-                         <div className="flex-1 flex overflow-hidden">
-                             {/* LEFT: Live Report */}
-                             <div className="flex-1 flex flex-col border-r border-border">
-                                <ReportViewer 
-                                    content={liveReport} 
-                                    fileName={activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt'} 
-                                />
-                             </div>
-                             {/* RIGHT: Live Log */}
-                             <div className="w-[480px] flex flex-col">
-                                <LogViewer 
-                                    content={liveLog} 
-                                    title={activeRunType === 'wet' ? 'wet-output.log' : 'dry-output.log'}
-                                />
-                             </div>
-                         </div>
-                         <RunningFooter 
-                            status={activeRunStatus} 
-                            onReview={handleReviewComplete}
-                            onStop={handleStopRun}
-                         />
-                    </div>
+                    <RunningView 
+                        liveReport={liveReport}
+                        liveLog={liveLog}
+                        activeRunType={activeRunType}
+                        activeRunStatus={activeRunStatus}
+                        onReview={handleReviewComplete}
+                        onStop={handleStopRun}
+                    />
                 ) : (
                 /* NORMAL EDITOR VIEW */
                 selection ? (

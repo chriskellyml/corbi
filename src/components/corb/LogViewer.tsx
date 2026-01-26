@@ -5,9 +5,10 @@ interface LogViewerProps {
     content: string;
     title: string;
     autoScroll?: boolean;
+    extraActions?: React.ReactNode;
 }
 
-export function LogViewer({ content, title, autoScroll = true }: LogViewerProps) {
+export function LogViewer({ content, title, autoScroll = true, extraActions }: LogViewerProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -21,6 +22,11 @@ export function LogViewer({ content, title, autoScroll = true }: LogViewerProps)
             <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border-b border-zinc-800 shrink-0">
                 <Terminal className="h-4 w-4 text-green-500" />
                 <span className="font-semibold text-zinc-300 uppercase tracking-wider">{title}</span>
+                {extraActions && (
+                    <div className="ml-auto flex items-center gap-2">
+                        {extraActions}
+                    </div>
+                )}
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-1">
                 <pre className="whitespace-pre-wrap break-all leading-relaxed opacity-90">

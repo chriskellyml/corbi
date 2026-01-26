@@ -9,9 +9,10 @@ import { FileSpreadsheet, FileText } from "lucide-react";
 interface ReportViewerProps {
     content: string;
     fileName: string;
+    extraActions?: React.ReactNode;
 }
 
-export function ReportViewer({ content, fileName }: ReportViewerProps) {
+export function ReportViewer({ content, fileName, extraActions }: ReportViewerProps) {
     const [viewMode, setViewMode] = useState<'text' | 'csv'>('text');
     const [delimiter, setDelimiter] = useState("|");
 
@@ -52,6 +53,11 @@ export function ReportViewer({ content, fileName }: ReportViewerProps) {
                             onCheckedChange={(c) => setViewMode(c ? 'csv' : 'text')} 
                         />
                     </div>
+                    {extraActions && (
+                        <div className="flex items-center gap-2 border-l pl-4 border-border">
+                            {extraActions}
+                        </div>
+                    )}
                 </div>
             </div>
 
