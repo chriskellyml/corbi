@@ -7,14 +7,20 @@ import { RunningFooter } from "./RunningFooter";
 import { Button } from "@/components/ui/button";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { RunOptions } from "./RunFooter";
 
 interface RunningViewProps {
     liveReport: string;
     liveLog: string;
     activeRunType: 'dry' | 'wet';
     activeRunStatus: 'running' | 'completed' | 'error';
+    
+    // Actions
     onReview: () => void;
     onStop: () => void;
+    onDiscard: (keepData: boolean) => void;
+    onRunAgain: (options: RunOptions) => void;
+    onExecuteWet: (options: RunOptions) => void;
 }
 
 export function RunningView({ 
@@ -23,7 +29,10 @@ export function RunningView({
     activeRunType, 
     activeRunStatus, 
     onReview, 
-    onStop 
+    onStop,
+    onDiscard,
+    onRunAgain,
+    onExecuteWet
 }: RunningViewProps) {
     const topRef = useRef<ImperativePanelHandle>(null);
     const bottomRef = useRef<ImperativePanelHandle>(null);
@@ -63,7 +72,6 @@ export function RunningView({
                     collapsible={true}
                     onCollapse={() => setLayoutState('bottom-max')}
                     onExpand={() => { 
-                        // If we manually dragged it open from 0, reset state to even (or partial) 
                         if (layoutState === 'bottom-max') setLayoutState('even'); 
                     }}
                     className={cn(layoutState === 'bottom-max' && "hidden")}
@@ -118,8 +126,12 @@ export function RunningView({
              
              <RunningFooter 
                 status={activeRunStatus} 
+                runType={activeRunType}
                 onReview={onReview}
                 onStop={onStop}
+                onDiscard={onDiscard}
+                onRunAgain={onRunAgain}
+                onExecuteWet={onExecuteWet}
              />
         </div>
     );

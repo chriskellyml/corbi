@@ -596,6 +596,85 @@ export default function Index() {
       }
   };
 
+  // --- New Handlers for Dry Run Workflows ---
+
+  const handleDiscardRun = async (keepData: boolean) => {
+      if (!lastRunId || !selectedProjectId) return;
+      
+      if (!keepData) {
+          try {
+              await deleteRun(selectedProjectId, environment, lastRunId);
+              // Clean from local state if needed
+              setProjects(prev => prev.map(p => {
+                if (p.id !== selectedProjectId) return p;
+                return { ...p, runs: p.runs.filter(r => !(r.timestamp === lastRunId && r.environments[0].name === environment)) };
+              }));
+              toast.info("Run data discarded");
+          } catch(e) { toast.error("Failed to delete run"); }
+      } else {
+          toast.info("Run data preserved");
+      }
+      
+      setRunMode('idle');
+      setLastRunId(null);
+  };
+
+  const handleRunAgain = async (options: RunOptions) => {
+      if (!selectedProjectId) return;
+      // We assume "Run Again" discards the previous dry run unless we want to keep history spam.
+      // Usually "Re-run" replaces the last attempt.
+      if (lastRunId) {
+          await deleteRun(selectedProjectId, environment, lastRunId);
+      }
+      
+      // Determine Job Name (either from selection if still valid or stored)
+      // Since we are in running mode, selection might be null or old. 
+      // But we started this from a job.
+      // We'll try to find the job name from the current view or selection.
+      // Actually, we don't store "currentJobName" in state except via selection or pending.
+      // We can infer it from the fact we are running something.
+      // But wait, executeRunSequence takes a jobName.
+      // If we are in runMode, we probably lost the selection context if the user clicked around?
+      // Actually, the sidebar is disabled during runMode, so selection.name (if type=job) should still be valid.
+      
+      let jobName = "";
+      if (selection?.kind === 'source' && selection.type === 'job') {
+          jobName = selection.name;
+      } else if (pendingRunJobName) {
+          jobName = pendingRunJobName;
+      } else {
+          // Fallback: This shouldn't happen if UI is locked, but let's just use the selected one if available
+          const proj = projects.find(p => p.id === selectedProjectId);
+          // If we can't find it easily, maybe we shouldn't allow re-run without context?
+          // But we can store it in a ref or state when running starts.
+          // Let's assume selection is still valid because we disable sidebar.
+          toast.error("Could not determine job context for re-run");
+          return;
+      }
+      
+      const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+      await executeRunSequence(selectedProjectId, jobName, 'retry-dry', finalOptions);
+  };
+
+  const handleExecuteWet = async (options: RunOptions) => {
+      if (!selectedProjectId) return;
+      // Promoting to wet run. Typically we might want to keep the dry run record? 
+      // But executeRunSequence deletes lastRunId if action is 'wet' or 'retry-dry'.
+      // So it will replace the dry run with the wet run log. This seems clean.
+      
+      let jobName = "";
+      if (selection?.kind === 'source' && selection.type === 'job') jobName = selection.name;
+      else if (pendingRunJobName) jobName = pendingRunJobName;
+      else {
+          toast.error("Could not determine job context");
+          return;
+      }
+
+      const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+      await executeRunSequence(selectedProjectId, jobName, 'wet', finalOptions);
+  };
+
+
   const isJob = selection?.kind === 'source' && selection.type === 'job';
   const isRunOptions = selection?.kind === 'run' && selection.fileName === 'job.options';
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
@@ -653,6 +732,9 @@ export default function Index() {
                         activeRunStatus={activeRunStatus}
                         onReview={handleReviewComplete}
                         onStop={handleStopRun}
+                        onDiscard={handleDiscardRun}
+                        onRunAgain={handleRunAgain}
+                        onExecuteWet={handleExecuteWet}
                     />
                 ) : (
                 /* NORMAL EDITOR VIEW */
