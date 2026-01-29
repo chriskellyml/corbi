@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import fs from 'fs/promises';
-import { existsSync, mkdirSync, createWriteStream, readFileSync } from 'fs';
+import { existsSync, mkdirSync, createWriteStream, readFileSync, appendFileSync } from 'fs';
 import path from 'path';
 import multer from 'multer';
 import { exec, spawn } from 'child_process';
@@ -13,9 +13,6 @@ const execPromise = util.promisify(exec);
 const app = express();
 const PORT = 3001;
 const WORKING_DIR = '/Users/chkelly/Workspace/projects/lvbb/kt/1-beheer-scripts/corb-new/';
-
-app.use(cors());
-app.use(bodyParser.json());
 
 // Setup logging
 const LOGS_DIR = path.join(process.cwd(), 'logs');
@@ -29,14 +26,25 @@ if (!existsSync(LOGS_DIR)) {
 
 const logFileName = `server-${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.log`;
 const logFilePath = path.join(LOGS_DIR, logFileName);
-const logStream = createWriteStream(logFilePath, { flags: 'a' });
-
+// Use synchronous appending for reliability during debugging
 function log(message: string) {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] ${message}\n`;
     console.log(message);
-    logStream.write(logMessage);
+    try {
+        appendFileSync(logFilePath, logMessage);
+    } catch (e) {
+        console.error("Failed to write to log file:", e);
+    }
 }
+
+app.use((req, res, next) => {
+    log(`${req.method} ${req.url}`);
+    next();
+});
+
+app.use(cors());
+app.use(bodyParser.json());
 
 log(`Server started. Logging to ${logFilePath}`);
 
@@ -451,16 +459,16 @@ app.delete('/api/files', async (req, res) => {
 // POST /api/run
 app.post('/api/run', async (req, res) => {
     log('Received request to /api/run'); // ADDED LOG
-    const { projectId, jobName, envName, options, password } = req.body;
+    const { projectId, jobName, envName, options, password, existingRunId } = req.body;
     log(`Run params: project=${projectId}, job=${jobName}, env=${envName}`); // ADDED LOG
     
     try {
-        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+        const timestamp = existingRunId || new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
         const jobNameNoExt = jobName.replace(/\.job$/, '');
         
         // Ensure directory exists immediately so we can stream logs to it
-        const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
-        await fs.mkdir(runDir, { recursive: true });
+         const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
+         await fs.mkdir(runDir, { recursive: true });
 
         // Strip ordering prefix (e.g. "01-TEST" -> "TEST") for password lookup
         const cleanEnvName = envName.replace(/^\d+-/, '');
@@ -482,79 +490,144 @@ app.post('/api/run', async (req, res) => {
              log(`DEBUG: No password found for ${envVarName}`);
         }
 
-        const executeAsync = () => {
-             // Setup Dry Run
-             const dryArgs = [
-                 `./run.sh`,
-                 `--env=${envName}`,
-                 `--project=${projectId}`,
-                 `--job=${jobNameNoExt}`,
-                 `--dry-run=true`,
-                 `--run-id=${timestamp}`,
-                 options.limit ? `--limit=${options.limit}` : '',
-                 '--skip-proceed-confirmation'
-             ].filter(Boolean);
+const executeAsync = () => {
+  if (options.dryRun) {
+    // Run dry only
+    const dryArgs = [
+      `./run.sh`,
+      `--env=${envName}`,
+      `--project=${projectId}`,
+      `--job=${jobNameNoExt}`,
+      `--dry-run=true`,
+      `--run-id=${timestamp}`,
+      options.limit ? `--limit=${options.limit}` : '',
+      '--skip-proceed-confirmation'
+    ].filter(Boolean);
 
-             const dryLogPath = path.join(runDir, 'dry-output.log');
-             const dryStream = createWriteStream(dryLogPath, { flags: 'a' });
+    const dryLogPath = path.join(runDir, 'dry-output.log');
+    const dryStream = createWriteStream(dryLogPath, { flags: 'a' });
 
-             log(`[${timestamp}] Spawning Dry Run: ${dryArgs.join(' ')}`);
-             
-             // Spawn with pipe to capture output
-             const dryChild = spawn(dryArgs[0], dryArgs.slice(1), { 
-                 cwd: WORKING_DIR, 
-                 env: envVars,
-                 stdio: ['ignore', 'pipe', 'pipe']
-             });
+    log(`[${timestamp}] Spawning Dry Run\nCommand: ${dryArgs.join(' ')}\nCWD: ${WORKING_DIR}`);
+    
+    dryStream.write(`[${timestamp}] Executing: ${dryArgs.join(' ')}\n\n`);
 
-             // Pipe output to file
-             if (dryChild.stdout) dryChild.stdout.pipe(dryStream);
-             if (dryChild.stderr) dryChild.stderr.pipe(dryStream);
+    const dryChild = spawn(dryArgs[0], dryArgs.slice(1), { 
+      cwd: WORKING_DIR, 
+      env: envVars,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
 
-             // Store process for stopping
-             activeRuns.set(timestamp, { status: 'running', process: dryChild });
+    if (dryChild.stdout) dryChild.stdout.pipe(dryStream);
+    if (dryChild.stderr) dryChild.stderr.pipe(dryStream);
 
-             dryChild.on('close', (code) => {
-                 log(`[${timestamp}] Dry run exited with code ${code}`);
-                 
-                 // Chain Wet Run if requested
-                 if (code === 0 && !options.dryRun) {
-                     const wetArgs = [
-                        `./run.sh`,
-                        `--env=${envName}`,
-                        `--project=${projectId}`,
-                        `--job=${jobNameNoExt}`,
-                        `--dry-run=false`,
-                        `--run-id=${timestamp}`,
-                        options.limit ? `--limit=${options.limit}` : '',
-                        '--skip-proceed-confirmation'
-                     ].filter(Boolean);
-                     
-                     const wetLogPath = path.join(runDir, 'wet-output.log');
-                     const wetStream = createWriteStream(wetLogPath, { flags: 'a' });
+    dryChild.on('error', (err) => {
+      const errMsg = `[${timestamp}] Failed to start dry run process: ${err.message}\n`;
+      log(errMsg.trim());
+      dryStream.write(errMsg);
+      activeRuns.set(timestamp, { status: 'error' });
+    });
 
-                     log(`[${timestamp}] Spawning Wet Run: ${wetArgs.join(' ')}`);
-                     const wetChild = spawn(wetArgs[0], wetArgs.slice(1), {
-                         cwd: WORKING_DIR,
-                         env: envVars,
-                         stdio: ['ignore', 'pipe', 'pipe']
-                     });
+    activeRuns.set(timestamp, { status: 'running', process: dryChild });
 
-                     if (wetChild.stdout) wetChild.stdout.pipe(wetStream);
-                     if (wetChild.stderr) wetChild.stderr.pipe(wetStream);
+    dryChild.on('close', (code) => {
+      log(`[${timestamp}] Dry run exited with code ${code}`);
+      activeRuns.set(timestamp, { status: code === 0 ? 'completed' : 'error' });
+    });
+  } else {
+    if (existingRunId) {
+      // Run wet only on existing
+      runWet();
+    } else {
+      // Run dry then chain wet
+      const dryArgs = [
+        `./run.sh`,
+        `--env=${envName}`,
+        `--project=${projectId}`,
+        `--job=${jobNameNoExt}`,
+        `--dry-run=true`,
+        `--run-id=${timestamp}`,
+        options.limit ? `--limit=${options.limit}` : '',
+        '--skip-proceed-confirmation'
+      ].filter(Boolean);
 
-                     // Update stored process
-                     activeRuns.set(timestamp, { status: 'running', process: wetChild });
+      const dryLogPath = path.join(runDir, 'dry-output.log');
+      const dryStream = createWriteStream(dryLogPath, { flags: 'a' });
 
-                     wetChild.on('close', (wCode) => {
-                         log(`[${timestamp}] Wet run exited with code ${wCode}`);
-                         activeRuns.set(timestamp, { status: wCode === 0 ? 'completed' : 'error' });
-                     });
-                 } else {
-                     activeRuns.set(timestamp, { status: code === 0 ? 'completed' : 'error' });
-                 }
-             });
-        };
+      log(`[${timestamp}] Spawning Dry Run\nCommand: ${dryArgs.join(' ')}\nCWD: ${WORKING_DIR}`);
+      
+      dryStream.write(`[${timestamp}] Executing: ${dryArgs.join(' ')}\n\n`);
+
+      const dryChild = spawn(dryArgs[0], dryArgs.slice(1), { 
+        cwd: WORKING_DIR, 
+        env: envVars,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      if (dryChild.stdout) dryChild.stdout.pipe(dryStream);
+      if (dryChild.stderr) dryChild.stderr.pipe(dryStream);
+
+      dryChild.on('error', (err) => {
+        const errMsg = `[${timestamp}] Failed to start dry run process: ${err.message}\n`;
+        log(errMsg.trim());
+        dryStream.write(errMsg);
+        activeRuns.set(timestamp, { status: 'error' });
+      });
+
+      activeRuns.set(timestamp, { status: 'running', process: dryChild });
+
+      dryChild.on('close', (code) => {
+        log(`[${timestamp}] Dry run exited with code ${code}`);
+        if (code === 0) {
+          runWet();
+        } else {
+          activeRuns.set(timestamp, { status: 'error' });
+        }
+      });
+    }
+  }
+
+  function runWet() {
+    const wetArgs = [
+      `./run.sh`,
+      `--env=${envName}`,
+      `--project=${projectId}`,
+      `--job=${jobNameNoExt}`,
+      `--dry-run=false`,
+      `--run-id=${timestamp}`,
+      '--skip-proceed-confirmation'
+    ].filter(Boolean);
+
+    const wetLogPath = path.join(runDir, 'wet-output.log');
+    const wetStream = createWriteStream(wetLogPath, { flags: 'a' });
+
+    log(`[${timestamp}] Spawning Wet Run\nCommand: ${wetArgs.join(' ')}\nCWD: ${WORKING_DIR}`);
+    
+    wetStream.write(`[${timestamp}] Executing: ${wetArgs.join(' ')}\n\n`);
+
+    const wetChild = spawn(wetArgs[0], wetArgs.slice(1), {
+      cwd: WORKING_DIR,
+      env: envVars,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    if (wetChild.stdout) wetChild.stdout.pipe(wetStream);
+    if (wetChild.stderr) wetChild.stderr.pipe(wetStream);
+
+    wetChild.on('error', (err) => {
+      const errMsg = `[${timestamp}] Failed to start wet run process: ${err.message}\n`;
+      log(errMsg.trim());
+      wetStream.write(errMsg);
+      activeRuns.set(timestamp, { status: 'error' });
+    });
+
+    activeRuns.set(timestamp, { status: 'running', process: wetChild });
+
+    wetChild.on('close', (wCode) => {
+      log(`[${timestamp}] Wet run exited with code ${wCode}`);
+      activeRuns.set(timestamp, { status: wCode === 0 ? 'completed' : 'error' });
+    });
+  }
+};
 
         activeRuns.set(timestamp, { status: 'running' });
         executeAsync();

@@ -141,7 +141,8 @@ export async function createRun(
   projectId: string, 
   jobName: string, 
   envName: string, 
-  options: RunOptions
+  options: RunOptions,
+  existingRunId?: string | null
 ): Promise<string> {
   const res = await fetch(`${API_BASE}/run`, {
     method: 'POST',
@@ -151,7 +152,8 @@ export async function createRun(
       jobName, 
       envName, 
       options,
-      password: options.password
+      password: options.password,
+      existingRunId
     })
   });
   if (!res.ok) throw new Error("Failed to run job");

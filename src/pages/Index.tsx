@@ -135,9 +135,17 @@ export default function Index() {
                 setLiveLog(log);
 
                 if (status === 'completed' || status === 'error') {
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Delay to allow file flush
+                    const prefix = activeRunType === 'wet' ? 'wet' : 'dry';
+                    const [finalReport, finalLog] = await Promise.all([
+                        getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-report.txt`),
+                        getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-output.log`)
+                    ]);
+                    setLiveReport(finalReport);
+                    setLiveLog(finalLog);
+
                     setRunMode('review');
                     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-                    // Refresh project data to show new run in sidebar
                     loadData();
                 }
 
@@ -528,11 +536,9 @@ export default function Index() {
 
   const executeRunSequence = async (projectId: string, jobName: string, action: RunAction, options: RunOptions) => {
     try {
-        if ((action === 'retry-dry' || action === 'wet') && lastRunId) {
-            await deleteRun(projectId, environment, lastRunId);
-        }
 
-        const runId = await createRun(projectId, jobName, environment, options);
+
+        const runId = await createRun(projectId, jobName, environment, options, action === 'wet' ? lastRunId : null);
         
         setLastRunId(runId);
         setActiveRunStatus('running');
@@ -570,6 +576,8 @@ export default function Index() {
         setIsPasswordDialogOpen(true);
     } else {
         const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+        finalOptions.dryRun = action !== 'wet';
+        if (action === 'wet') finalOptions.limit = null;
         await executeRunSequence(selectedProjectId, jobName, action, finalOptions);
     }
   };
@@ -653,6 +661,7 @@ export default function Index() {
       }
       
       const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+      finalOptions.dryRun = true;
       await executeRunSequence(selectedProjectId, jobName, 'retry-dry', finalOptions);
   };
 
@@ -671,6 +680,8 @@ export default function Index() {
       }
 
       const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+      finalOptions.dryRun = false;
+      finalOptions.limit = null;
       await executeRunSequence(selectedProjectId, jobName, 'wet', finalOptions);
   };
 
