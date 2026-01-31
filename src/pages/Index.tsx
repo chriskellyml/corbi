@@ -622,6 +622,23 @@ export default function Index() {
 
   // --- New Handlers for Dry Run Workflows ---
 
+  const handleRefreshLiveArtifacts = async () => {
+      if (!selectedProjectId || !lastRunId) return;
+      
+      const tId = toast.loading("Refreshing run artifacts...");
+      try {
+          const { log, reportContent, reportName } = await fetchRunArtifacts(selectedProjectId, environment, lastRunId, activeRunType);
+          
+          setLiveReport(reportContent);
+          setLiveReportName(reportName);
+          setLiveLog(log);
+          
+          toast.success("Refreshed", { id: tId });
+      } catch (e) {
+          toast.error("Failed to refresh", { id: tId });
+      }
+  };
+
   const handleDiscardRun = async (keepData: boolean) => {
       if (!lastRunId || !selectedProjectId) return;
       
@@ -763,6 +780,7 @@ export default function Index() {
                         onDiscard={handleDiscardRun}
                         onRunAgain={handleRunAgain}
                         onExecuteWet={handleExecuteWet}
+                        onRefreshReport={handleRefreshLiveArtifacts}
                     />
                 ) : (
                 /* NORMAL EDITOR VIEW */

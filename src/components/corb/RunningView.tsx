@@ -5,7 +5,7 @@ import { ReportViewer } from "./ReportViewer";
 import { LogViewer } from "./LogViewer";
 import { RunningFooter } from "./RunningFooter";
 import { Button } from "@/components/ui/button";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RunOptions } from "./RunFooter";
 
@@ -22,6 +22,7 @@ interface RunningViewProps {
     onDiscard: (keepData: boolean) => void;
     onRunAgain: (options: RunOptions) => void;
     onExecuteWet: (options: RunOptions) => void;
+    onRefreshReport?: () => void;
 }
 
 export function RunningView({ 
@@ -34,7 +35,8 @@ export function RunningView({
     onStop,
     onDiscard,
     onRunAgain,
-    onExecuteWet
+    onExecuteWet,
+    onRefreshReport
 }: RunningViewProps) {
     const topRef = useRef<ImperativePanelHandle>(null);
     const bottomRef = useRef<ImperativePanelHandle>(null);
@@ -84,15 +86,28 @@ export function RunningView({
                         content={liveReport} 
                         fileName={reportFileName} 
                         extraActions={
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                onClick={toggleTop} 
-                                className="h-6 w-6" 
-                                title={layoutState === 'top-max' ? "Restore Split View" : "Maximize Result View"}
-                            >
-                                {layoutState === 'top-max' ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                            </Button>
+                            <>
+                                {onRefreshReport && (
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        onClick={onRefreshReport} 
+                                        className="h-6 w-6" 
+                                        title="Force Refresh Report"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                    </Button>
+                                )}
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={toggleTop} 
+                                    className="h-6 w-6" 
+                                    title={layoutState === 'top-max' ? "Restore Split View" : "Maximize Result View"}
+                                >
+                                    {layoutState === 'top-max' ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                                </Button>
+                            </>
                         }
                     />
                 </ResizablePanel>
