@@ -49,6 +49,7 @@ export default function Index() {
   const [runMode, setRunMode] = useState<RunMode>('idle');
   const [activeRunStatus, setActiveRunStatus] = useState<'running' | 'completed' | 'error'>('running');
   const [liveReport, setLiveReport] = useState("");
+  const [liveReportName, setLiveReportName] = useState("");
   const [liveLog, setLiveLog] = useState("");
   const [activeRunType, setActiveRunType] = useState<'dry'|'wet'>('dry');
 
@@ -112,6 +113,26 @@ export default function Index() {
     }
   };
 
+  const fetchRunArtifacts = async (projectId: string, env: string, runId: string, runType: 'dry' | 'wet') => {
+      const prefix = runType === 'wet' ? 'wet' : 'dry';
+      
+      const log = await getRunFile(projectId, env, runId, `${prefix}-output.log`);
+      
+      let reportName = `${prefix}-report.txt`;
+      let reportContent = await getRunFile(projectId, env, runId, reportName);
+
+      if (!reportContent) {
+          // Fallback to export.csv if the standard report is empty
+          const csv = await getRunFile(projectId, env, runId, 'export.csv');
+          if (csv) {
+              reportContent = csv;
+              reportName = 'export.csv';
+          }
+      }
+
+      return { log, reportContent, reportName };
+  };
+
   // Polling Logic for Running Mode
   useEffect(() => {
     if (runMode === 'running' && lastRunId && selectedProjectId) {
@@ -124,25 +145,19 @@ export default function Index() {
                 setActiveRunStatus(status);
 
                 // 2. Fetch Files
-                const prefix = activeRunType === 'wet' ? 'wet' : 'dry';
+                const { log, reportContent, reportName } = await fetchRunArtifacts(selectedProjectId, environment, lastRunId, activeRunType);
                 
-                const [report, log] = await Promise.all([
-                    getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-report.txt`),
-                    getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-output.log`)
-                ]);
-                
-                setLiveReport(report);
+                setLiveReport(reportContent);
+                setLiveReportName(reportName);
                 setLiveLog(log);
 
                 if (status === 'completed' || status === 'error') {
                     await new Promise(resolve => setTimeout(resolve, 500)); // Delay to allow file flush
-                    const prefix = activeRunType === 'wet' ? 'wet' : 'dry';
-                    const [finalReport, finalLog] = await Promise.all([
-                        getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-report.txt`),
-                        getRunFile(selectedProjectId, environment, lastRunId, `${prefix}-output.log`)
-                    ]);
-                    setLiveReport(finalReport);
-                    setLiveLog(finalLog);
+                    
+                    const finalArtifacts = await fetchRunArtifacts(selectedProjectId, environment, lastRunId, activeRunType);
+                    setLiveReport(finalArtifacts.reportContent);
+                    setLiveReportName(finalArtifacts.reportName);
+                    setLiveLog(finalArtifacts.log);
 
                     setRunMode('review');
                     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -544,6 +559,7 @@ export default function Index() {
         setActiveRunStatus('running');
         setRunMode('running');
         setLiveReport("");
+        setLiveReportName("");
         setLiveLog("");
         setActiveRunType(action === 'wet' ? 'wet' : 'dry');
 
@@ -738,6 +754,7 @@ export default function Index() {
                 {(runMode === 'running' || runMode === 'review') ? (
                     <RunningView 
                         liveReport={liveReport}
+                        liveReportName={liveReportName}
                         liveLog={liveLog}
                         activeRunType={activeRunType}
                         activeRunStatus={activeRunStatus}

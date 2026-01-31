@@ -11,6 +11,7 @@ import type { RunOptions } from "./RunFooter";
 
 interface RunningViewProps {
     liveReport: string;
+    liveReportName?: string;
     liveLog: string;
     activeRunType: 'dry' | 'wet';
     activeRunStatus: 'running' | 'completed' | 'error';
@@ -25,6 +26,7 @@ interface RunningViewProps {
 
 export function RunningView({ 
     liveReport, 
+    liveReportName,
     liveLog, 
     activeRunType, 
     activeRunStatus, 
@@ -62,6 +64,8 @@ export function RunningView({
         }
     };
 
+    const reportFileName = liveReportName || (activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt');
+
     return (
         <div className="flex flex-col h-full bg-background animate-in fade-in slide-in-from-bottom-4">
              <ResizablePanelGroup direction="vertical" className="flex-1 min-h-0">
@@ -78,7 +82,7 @@ export function RunningView({
                 >
                     <ReportViewer 
                         content={liveReport} 
-                        fileName={activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt'} 
+                        fileName={reportFileName} 
                         extraActions={
                             <Button 
                                 variant="ghost" 
