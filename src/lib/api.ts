@@ -176,7 +176,9 @@ export async function getRunStatus(projectId: string, envName: string, runId: st
 }
 
 export async function getRunFile(projectId: string, envName: string, runId: string, filename: string): Promise<string> {
-    const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}/file/${filename}`);
+    // Add timestamp to prevent caching
+    const url = `${API_BASE}/run/${projectId}/${envName}/${runId}/file/${filename}?t=${Date.now()}`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error("Failed to fetch run file");
     const data = await res.json();
     return data.content;

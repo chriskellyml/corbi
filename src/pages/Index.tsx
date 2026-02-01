@@ -548,6 +548,17 @@ export default function Index() {
     }
     return "";
   };
+  
+  // Calculate correct full path for history viewer
+  const getHistoryFullPath = () => {
+      if (!selection || selection.kind !== 'run') return undefined;
+      // selection.runId is typically "ENV/TIMESTAMP". We want just the timestamp for the path.
+      // But we can also look it up in the run object if we have it, or just split.
+      // Format: PROJECT / ENV / TIMESTAMP / FILE
+      const parts = selection.runId.split('/');
+      const timestamp = parts.length > 1 ? parts[1] : selection.runId;
+      return `${selectedProjectId}/${selection.envName}/${timestamp}/${selection.fileName}`;
+  };
 
   const executeRunSequence = async (projectId: string, jobName: string, action: RunAction, options: RunOptions) => {
     try {
@@ -841,7 +852,7 @@ export default function Index() {
                             <ReportViewer 
                                 content={getCurrentFileContent()} 
                                 fileName={selection.fileName}
-                                fullPath={`${selectedProjectId}/${selection.envName}/${selection.runId}/${selection.fileName}`}
+                                fullPath={getHistoryFullPath()}
                             />
                         )}
                     </div>
