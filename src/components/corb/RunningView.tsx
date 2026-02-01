@@ -15,6 +15,7 @@ interface RunningViewProps {
     liveLog: string;
     activeRunType: 'dry' | 'wet';
     activeRunStatus: 'running' | 'completed' | 'error';
+    reportFullPath?: string;
     
     // Actions
     onReview: () => void;
@@ -31,6 +32,7 @@ export function RunningView({
     liveLog, 
     activeRunType, 
     activeRunStatus, 
+    reportFullPath,
     onReview, 
     onStop,
     onDiscard,
@@ -85,6 +87,7 @@ export function RunningView({
                     <ReportViewer 
                         content={liveReport} 
                         fileName={reportFileName} 
+                        fullPath={reportFullPath}
                         extraActions={
                             <>
                                 {onRefreshReport && (

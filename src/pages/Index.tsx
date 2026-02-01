@@ -775,6 +775,7 @@ export default function Index() {
                         liveLog={liveLog}
                         activeRunType={activeRunType}
                         activeRunStatus={activeRunStatus}
+                        reportFullPath={`${selectedProjectId}/${environment}/${lastRunId}/${liveReportName || (activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt')}`}
                         onReview={handleReviewComplete}
                         onStop={handleStopRun}
                         onDiscard={handleDiscardRun}
@@ -840,6 +841,7 @@ export default function Index() {
                             <ReportViewer 
                                 content={getCurrentFileContent()} 
                                 fileName={selection.fileName}
+                                fullPath={`${selectedProjectId}/${selection.envName}/${selection.runId}/${selection.fileName}`}
                             />
                         )}
                     </div>

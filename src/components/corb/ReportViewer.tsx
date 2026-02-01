@@ -5,14 +5,16 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FileSpreadsheet, FileText } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ReportViewerProps {
     content: string;
     fileName: string;
+    fullPath?: string;
     extraActions?: React.ReactNode;
 }
 
-export function ReportViewer({ content, fileName, extraActions }: ReportViewerProps) {
+export function ReportViewer({ content, fileName, fullPath, extraActions }: ReportViewerProps) {
     const [viewMode, setViewMode] = useState<'text' | 'csv'>('text');
     const [delimiter, setDelimiter] = useState("|");
 
@@ -29,7 +31,18 @@ export function ReportViewer({ content, fileName, extraActions }: ReportViewerPr
             <div className="flex items-center justify-between p-3 border-b border-border bg-muted/20 shrink-0">
                 <div className="flex items-center gap-2">
                     {viewMode === 'csv' ? <FileSpreadsheet className="h-4 w-4 text-green-600" /> : <FileText className="h-4 w-4 text-muted-foreground" />}
-                    <span className="font-semibold text-sm">{fileName}</span>
+                    <TooltipProvider>
+                        <Tooltip delayDuration={300}>
+                            <TooltipTrigger asChild>
+                                <span className="font-semibold text-sm cursor-help decoration-dotted underline underline-offset-2 decoration-muted-foreground/50">
+                                    {fileName}
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                                <p className="font-mono text-xs">{fullPath || fileName}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
                 </div>
                 
                 <div className="flex items-center gap-4">
