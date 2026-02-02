@@ -10,7 +10,7 @@ import { RunningView } from "../components/corb/RunningView";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap, EnvData } from "../types";
 import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
-import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw } from "lucide-react";
+import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import { MadeWithDyad } from "../components/made-with-dyad";
@@ -200,6 +200,11 @@ export default function Index() {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return false;
       return permissions[selectedProjectId]?.[selection.name]?.[environment] === true;
   }, [permissions, selectedProjectId, selection, environment]);
+
+  const currentJobPermissions: Record<string, boolean> | undefined = useMemo(() => {
+      if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return undefined;
+      return permissions[selectedProjectId]?.[selection.name];
+  }, [permissions, selectedProjectId, selection]);
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
@@ -552,18 +557,24 @@ export default function Index() {
   // Calculate correct full path for history viewer
   const getHistoryFullPath = () => {
       if (!selection || selection.kind !== 'run') return undefined;
-      // selection.runId is typically "ENV/TIMESTAMP". We want just the timestamp for the path.
-      // But we can also look it up in the run object if we have it, or just split.
-      // Format: PROJECT / ENV / TIMESTAMP / FILE
+      // Strip numeric prefix from env name for proper path display
+      const cleanEnv = selection.envName.replace(/^\d+-/, '');
       const parts = selection.runId.split('/');
       const timestamp = parts.length > 1 ? parts[1] : selection.runId;
-      return `${selectedProjectId}/${selection.envName}/${timestamp}/${selection.fileName}`;
+      return `${selectedProjectId}/${cleanEnv}/${timestamp}/${selection.fileName}`;
+  };
+
+  // Helper to refresh history item
+  const handleHistoryRefresh = async () => {
+      if (selection?.kind !== 'run') return;
+      // Force reload data
+      const tId = toast.loading("Refreshing history...");
+      await loadData();
+      toast.success("Refreshed", { id: tId });
   };
 
   const executeRunSequence = async (projectId: string, jobName: string, action: RunAction, options: RunOptions) => {
     try {
-
-
         const runId = await createRun(projectId, jobName, environment, options, action === 'wet' ? lastRunId : null);
         
         setLastRunId(runId);
@@ -737,10 +748,6 @@ export default function Index() {
   const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
   const isReport = selection?.kind === 'run' && selection.category === 'reports';
   const isEnvDirty = envFiles[environment]?.content !== originalEnvFiles[environment]?.content;
-  const currentJobPermissions = useMemo(() => {
-      if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return undefined;
-      return permissions[selectedProjectId]?.[selection.name];
-  }, [permissions, selectedProjectId, selection]);
 
   if (loading) return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
 
@@ -786,7 +793,7 @@ export default function Index() {
                         liveLog={liveLog}
                         activeRunType={activeRunType}
                         activeRunStatus={activeRunStatus}
-                        reportFullPath={`${selectedProjectId}/${environment}/${lastRunId}/${liveReportName || (activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt')}`}
+                        reportFullPath={`${selectedProjectId}/${environment.replace(/^\d+-/, '')}/${lastRunId}/${liveReportName || (activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt')}`}
                         onReview={handleReviewComplete}
                         onStop={handleStopRun}
                         onDiscard={handleDiscardRun}
@@ -853,6 +860,17 @@ export default function Index() {
                                 content={getCurrentFileContent()} 
                                 fileName={selection.fileName}
                                 fullPath={getHistoryFullPath()}
+                                extraActions={
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        onClick={handleHistoryRefresh} 
+                                        className="h-6 w-6" 
+                                        title="Refresh"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                    </Button>
+                                }
                             />
                         )}
                     </div>
