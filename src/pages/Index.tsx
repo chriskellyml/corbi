@@ -5,6 +5,7 @@ import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
 import { JobEditor } from "../components/corb/JobEditor";
 import { ReportViewer } from "../components/corb/ReportViewer";
+import { LogViewer } from "../components/corb/LogViewer";
 import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { RunningView } from "../components/corb/RunningView";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
@@ -690,27 +691,12 @@ export default function Index() {
           await deleteRun(selectedProjectId, environment, lastRunId);
       }
       
-      // Determine Job Name (either from selection if still valid or stored)
-      // Since we are in running mode, selection might be null or old. 
-      // But we started this from a job.
-      // We'll try to find the job name from the current view or selection.
-      // Actually, we don't store "currentJobName" in state except via selection or pending.
-      // We can infer it from the fact we are running something.
-      // But wait, executeRunSequence takes a jobName.
-      // If we are in runMode, we probably lost the selection context if the user clicked around?
-      // Actually, the sidebar is disabled during runMode, so selection.name (if type=job) should still be valid.
-      
       let jobName = "";
       if (selection?.kind === 'source' && selection.type === 'job') {
           jobName = selection.name;
       } else if (pendingRunJobName) {
           jobName = pendingRunJobName;
       } else {
-          // Fallback: This shouldn't happen if UI is locked, but let's just use the selected one if available
-          const proj = projects.find(p => p.id === selectedProjectId);
-          // If we can't find it easily, maybe we shouldn't allow re-run without context?
-          // But we can store it in a ref or state when running starts.
-          // Let's assume selection is still valid because we disable sidebar.
           toast.error("Could not determine job context for re-run");
           return;
       }
@@ -745,8 +731,12 @@ export default function Index() {
   const isRunOptions = selection?.kind === 'run' && selection.fileName === 'job.options';
   const isScript = (selection?.kind === 'source' && selection.type === 'script') || (selection?.kind === 'run' && selection.category === 'scripts');
   const isReadOnly = selection?.kind === 'run';
-  const isLogOrCsv = selection?.kind === 'run' && (selection.category === 'logs' || selection.fileName === 'export.csv');
+  
+  // Log / Report identification
+  const isLog = selection?.kind === 'run' && selection.category === 'logs';
+  const isCsv = selection?.kind === 'run' && selection.fileName === 'export.csv';
   const isReport = selection?.kind === 'run' && selection.category === 'reports';
+  
   const isEnvDirty = envFiles[environment]?.content !== originalEnvFiles[environment]?.content;
 
   if (loading) return <div className="h-screen w-full flex items-center justify-center text-muted-foreground">Loading projects...</div>;
@@ -842,20 +832,16 @@ export default function Index() {
                                 />
                             </div>
                         )}
-                        {isLogOrCsv && (
-                            <div className="flex-1 flex flex-col bg-background">
-                                <div className="p-3 border-b text-xs font-medium text-muted-foreground flex justify-between items-center">
-                                    <span>{selection.fileName}</span>
-                                    <span className="uppercase">{selection.kind} / {selection.category}</span>
-                                </div>
-                                <Textarea 
-                                    readOnly 
-                                    className="flex-1 resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed" 
-                                    value={getCurrentFileContent()} 
-                                />
-                            </div>
+                        
+                        {isLog && (
+                             <LogViewer 
+                                content={getCurrentFileContent()} 
+                                title={selection.fileName}
+                                autoScroll={false}
+                            />
                         )}
-                        {isReport && (
+
+                        {(isReport || isCsv) && (
                             <ReportViewer 
                                 content={getCurrentFileContent()} 
                                 fileName={selection.fileName}
