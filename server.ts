@@ -456,6 +456,19 @@ app.delete('/api/files', async (req, res) => {
     }
 });
 
+// GET /api/run/:projectId/:envName/:runId/files
+app.get('/api/run/:projectId/:envName/:runId/files', async (req, res) => {
+    const { projectId, envName, runId } = req.params;
+    try {
+        const runDir = safePath(path.join(RUNS_DIR, projectId, envName), runId);
+        if (!existsSync(runDir)) return res.json([]);
+        const files = await fs.readdir(runDir);
+        res.json(files.filter(f => !f.startsWith('.')));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // POST /api/run
 app.post('/api/run', async (req, res) => {
     log('Received request to /api/run'); // ADDED LOG

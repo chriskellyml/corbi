@@ -34,7 +34,7 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
 
     const parsedData = useMemo(() => {
         if (viewMode !== 'csv') return [];
-        return parseCSV(content, delimiter);
+        return parseCSV(content || "", delimiter);
     }, [content, delimiter, viewMode]);
 
     const headers = parsedData.length > 0 ? parsedData[0] : [];
@@ -54,6 +54,8 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
         setHiddenColumns(new Set());
     };
 
+    const isEmpty = !content || content.trim().length === 0;
+
     return (
         <div className="flex flex-col h-full bg-background">
             <div className="flex items-center justify-between p-3 border-b border-border bg-muted/20 shrink-0">
@@ -63,7 +65,7 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
                         <Tooltip delayDuration={300}>
                             <TooltipTrigger asChild>
                                 <span className="font-semibold text-sm cursor-help decoration-dotted underline underline-offset-2 decoration-muted-foreground/50">
-                                    {fileName}
+                                    {fileName || "Report Viewer"}
                                 </span>
                             </TooltipTrigger>
                             <TooltipContent side="right">
@@ -136,46 +138,52 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
             </div>
 
             <div className="flex-1 overflow-hidden relative">
-                {viewMode === 'text' ? (
-                     <Textarea 
-                        readOnly 
-                        className="w-full h-full resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed bg-transparent whitespace-pre overflow-auto" 
-                        value={content} 
-                    />
+                {isEmpty ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground bg-muted/5 font-mono text-xs italic">
+                        No report data available.
+                    </div>
                 ) : (
-                    <div className="h-full overflow-auto">
-                        {parsedData.length === 0 ? (
-                            <div className="p-8 text-center text-muted-foreground text-sm">
-                                Empty file or invalid content.
-                            </div>
-                        ) : (
-                            <Table className="min-w-max w-full border-collapse">
-                                <TableHeader>
-                                    <TableRow className="bg-muted/50 hover:bg-muted/50 sticky top-0 z-10 shadow-sm">
-                                        {headers.map((h, i) => {
-                                            if (hiddenColumns.has(i)) return null;
-                                            return <TableHead key={i} className="font-bold text-xs whitespace-nowrap px-4 py-2 h-9 border-b border-r last:border-r-0 bg-muted/50">{h}</TableHead>;
-                                        })}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {rows.map((row, idx) => (
-                                        <TableRow key={idx} className="hover:bg-muted/10">
-                                            {row.map((cell, cIdx) => {
-                                                if (hiddenColumns.has(cIdx)) return null;
-                                                return <TableCell key={cIdx} className="text-xs whitespace-nowrap px-4 py-2 border-r last:border-r-0 border-b">{cell}</TableCell>;
+                    viewMode === 'text' ? (
+                        <Textarea 
+                            readOnly 
+                            className="w-full h-full resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed bg-transparent whitespace-pre overflow-auto" 
+                            value={content} 
+                        />
+                    ) : (
+                        <div className="h-full overflow-auto">
+                            {parsedData.length === 0 ? (
+                                <div className="p-8 text-center text-muted-foreground text-sm">
+                                    Empty file or invalid content.
+                                </div>
+                            ) : (
+                                <Table className="min-w-max w-full border-collapse">
+                                    <TableHeader>
+                                        <TableRow className="bg-muted/50 hover:bg-muted/50 sticky top-0 z-10 shadow-sm">
+                                            {headers.map((h, i) => {
+                                                if (hiddenColumns.has(i)) return null;
+                                                return <TableHead key={i} className="font-bold text-xs whitespace-nowrap px-4 py-2 h-9 border-b border-r last:border-r-0 bg-muted/50">{h}</TableHead>;
                                             })}
                                         </TableRow>
-                                    ))}
-                                    {rows.length === 0 && headers.length > 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={headers.length - hiddenColumns.size} className="text-center py-8 text-muted-foreground">No data rows found.</TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </div>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {rows.map((row, idx) => (
+                                            <TableRow key={idx} className="hover:bg-muted/10">
+                                                {row.map((cell, cIdx) => {
+                                                    if (hiddenColumns.has(cIdx)) return null;
+                                                    return <TableCell key={cIdx} className="text-xs whitespace-nowrap px-4 py-2 border-r last:border-r-0 border-b">{cell}</TableCell>;
+                                                })}
+                                            </TableRow>
+                                        ))}
+                                        {rows.length === 0 && headers.length > 0 && (
+                                            <TableRow>
+                                                <TableCell colSpan={headers.length - hiddenColumns.size} className="text-center py-8 text-muted-foreground">No data rows found.</TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </div>
+                    )
                 )}
             </div>
         </div>

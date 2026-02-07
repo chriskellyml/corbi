@@ -10,7 +10,7 @@ import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { RunningView } from "../components/corb/RunningView";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap, EnvData } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile } from "../lib/api";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile, getRunFiles } from "../lib/api";
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -117,18 +117,34 @@ export default function Index() {
   const fetchRunArtifacts = async (projectId: string, env: string, runId: string, runType: 'dry' | 'wet') => {
       const prefix = runType === 'wet' ? 'wet' : 'dry';
       
-      const log = await getRunFile(projectId, env, runId, `${prefix}-output.log`);
-      
-      let reportName = `${prefix}-report.txt`;
-      let reportContent = await getRunFile(projectId, env, runId, reportName);
+      // Get all files in directory first
+      let files: string[] = [];
+      try {
+          files = await getRunFiles(projectId, env, runId);
+      } catch(e) { console.error("Failed to list files", e); }
 
-      if (!reportContent) {
-          // Fallback to export.csv if the standard report is empty
-          const csv = await getRunFile(projectId, env, runId, 'export.csv');
-          if (csv) {
-              reportContent = csv;
-              reportName = 'export.csv';
-          }
+      // Log: Try to find prefix-output.log, fallback to any .log
+      let logName = files.find(f => f === `${prefix}-output.log`) || files.find(f => f.endsWith('.log')) || `${prefix}-output.log`;
+      const log = await getRunFile(projectId, env, runId, logName);
+      
+      // Report: Try to find prefix-report.txt, fallback to ANY report.txt, fallback to export.csv
+      let reportName = files.find(f => f === `${prefix}-report.txt`) || files.find(f => f.endsWith('report.txt')) || 'export.csv';
+      
+      let reportContent = "";
+      if (files.includes(reportName)) {
+           reportContent = await getRunFile(projectId, env, runId, reportName);
+      } else {
+           // Fallback if file listing failed but file might exist
+           reportContent = await getRunFile(projectId, env, runId, reportName);
+      }
+      
+      // Special check for export.csv if report is empty
+      if (!reportContent && reportName !== 'export.csv' && files.includes('export.csv')) {
+           const csv = await getRunFile(projectId, env, runId, 'export.csv');
+           if (csv) {
+               reportContent = csv;
+               reportName = 'export.csv';
+           }
       }
 
       return { log, reportContent, reportName };

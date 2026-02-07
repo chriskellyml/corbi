@@ -184,6 +184,12 @@ export async function getRunFile(projectId: string, envName: string, runId: stri
     return data.content;
 }
 
+export async function getRunFiles(projectId: string, envName: string, runId: string): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}/files`);
+    if (!res.ok) throw new Error("Failed to fetch run files");
+    return res.json();
+}
+
 export async function deleteRun(projectId: string, envName: string, runId: string): Promise<void> {
     const res = await fetch(`${API_BASE}/run/${projectId}/${envName}/${runId}`, {
         method: 'DELETE'
