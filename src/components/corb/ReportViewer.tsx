@@ -61,18 +61,16 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
             <div className="flex items-center justify-between p-3 border-b border-border bg-muted/20 shrink-0">
                 <div className="flex items-center gap-2">
                     {viewMode === 'csv' ? <FileSpreadsheet className="h-4 w-4 text-green-600" /> : <FileText className="h-4 w-4 text-muted-foreground" />}
-                    <TooltipProvider>
-                        <Tooltip delayDuration={300}>
-                            <TooltipTrigger asChild>
-                                <span className="font-semibold text-sm cursor-help decoration-dotted underline underline-offset-2 decoration-muted-foreground/50">
-                                    {fileName || "Report Viewer"}
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right">
-                                <p className="font-mono text-xs">{fullPath || fileName}</p>
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
+                    <div className="flex flex-col">
+                        <span className="font-semibold text-sm">
+                            {fileName || "Report Viewer"}
+                        </span>
+                        {fullPath && (
+                            <span className="text-[10px] text-muted-foreground font-mono select-text">
+                                {fullPath}
+                            </span>
+                        )}
+                    </div>
                 </div>
                 
                 <div className="flex items-center gap-4">

@@ -127,8 +127,11 @@ export default function Index() {
       let logName = files.find(f => f === `${prefix}-output.log`) || files.find(f => f.endsWith('.log')) || `${prefix}-output.log`;
       const log = await getRunFile(projectId, env, runId, logName);
       
-      // Report: Try to find prefix-report.txt, fallback to ANY report.txt. Default to expected name if missing.
-      let reportName = files.find(f => f === `${prefix}-report.txt`) || files.find(f => f.endsWith('report.txt')) || `${prefix}-report.txt`;
+      // Report: Try to find prefix-report.txt, fallback to ANY report.txt (excluding the other type). Default to expected name if missing.
+      const otherPrefix = prefix === 'wet' ? 'dry' : 'wet';
+      let reportName = files.find(f => f === `${prefix}-report.txt`) || 
+                       files.find(f => f.endsWith('report.txt') && !f.startsWith(`${otherPrefix}-`)) || 
+                       `${prefix}-report.txt`;
       
       let reportContent = "";
       if (files.includes(reportName)) {
@@ -148,12 +151,12 @@ export default function Index() {
         pollIntervalRef.current = setInterval(async () => {
             try {
                 // 1. Check Status
-                const statusStr = await getRunStatus(selectedProjectId, environment, lastRunId);
+                const statusStr = await getRunStatus(selectedProjectId, cleanEnv, lastRunId);
                 const status = statusStr as 'running' | 'completed' | 'error';
                 setActiveRunStatus(status);
 
                 // 2. Fetch Files
-                const { log, reportContent, reportName } = await fetchRunArtifacts(selectedProjectId, environment, lastRunId, activeRunType);
+                const { log, reportContent, reportName } = await fetchRunArtifacts(selectedProjectId, cleanEnv, lastRunId, activeRunType);
                 
                 setLiveReport(reportContent);
                 setLiveReportName(reportName);
@@ -162,7 +165,7 @@ export default function Index() {
                 if (status === 'completed' || status === 'error') {
                     await new Promise(resolve => setTimeout(resolve, 500)); // Delay to allow file flush
                     
-                    const finalArtifacts = await fetchRunArtifacts(selectedProjectId, environment, lastRunId, activeRunType);
+                    const finalArtifacts = await fetchRunArtifacts(selectedProjectId, cleanEnv, lastRunId, activeRunType);
                     setLiveReport(finalArtifacts.reportContent);
                     setLiveReportName(finalArtifacts.reportName);
                     setLiveLog(finalArtifacts.log);
@@ -184,6 +187,7 @@ export default function Index() {
   }, [runMode, lastRunId, selectedProjectId, environment, activeRunType]);
 
   const sortedEnvKeys = useMemo(() => Object.keys(envFiles).sort(), [envFiles]);
+  const cleanEnv = environment.replace(/^\d+-/, '');
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const currentUserName = (() => {
     const content = envFiles[environment]?.content || "";
@@ -564,11 +568,10 @@ export default function Index() {
   // Calculate correct full path for history viewer
   const getHistoryFullPath = () => {
       if (!selection || selection.kind !== 'run') return undefined;
-      // Strip numeric prefix from env name for proper path display
-      const cleanEnv = selection.envName.replace(/^\d+-/, '');
+      // Use full env name for clarity in debugging
       const parts = selection.runId.split('/');
       const timestamp = parts.length > 1 ? parts[1] : selection.runId;
-      return `${selectedProjectId}/${cleanEnv}/${timestamp}/${selection.fileName}`;
+      return `${selectedProjectId}/${selection.envName}/${timestamp}/${selection.fileName}`;
   };
 
   // Helper to refresh history item
@@ -582,7 +585,7 @@ export default function Index() {
 
   const executeRunSequence = async (projectId: string, jobName: string, action: RunAction, options: RunOptions) => {
     try {
-        const runId = await createRun(projectId, jobName, environment, options, action === 'wet' ? lastRunId : null);
+        const runId = await createRun(projectId, jobName, cleanEnv, options, action === 'wet' ? lastRunId : null);
         
         setLastRunId(runId);
         setActiveRunStatus('running');
@@ -642,7 +645,7 @@ export default function Index() {
   const handleStopRun = async () => {
       if (!lastRunId || !selectedProjectId) return;
       try {
-          await stopRun(selectedProjectId, environment, lastRunId);
+          await stopRun(selectedProjectId, cleanEnv, lastRunId);
           toast.warning("Run stop requested...");
       } catch (e) {
           toast.error("Failed to stop run");
@@ -656,7 +659,7 @@ export default function Index() {
       
       const tId = toast.loading("Refreshing run artifacts...");
       try {
-          const { log, reportContent, reportName } = await fetchRunArtifacts(selectedProjectId, environment, lastRunId, activeRunType);
+          const { log, reportContent, reportName } = await fetchRunArtifacts(selectedProjectId, cleanEnv, lastRunId, activeRunType);
           
           setLiveReport(reportContent);
           setLiveReportName(reportName);
@@ -673,11 +676,11 @@ export default function Index() {
       
       if (!keepData) {
           try {
-              await deleteRun(selectedProjectId, environment, lastRunId);
+              await deleteRun(selectedProjectId, cleanEnv, lastRunId);
               // Clean from local state if needed
               setProjects(prev => prev.map(p => {
                 if (p.id !== selectedProjectId) return p;
-                return { ...p, runs: p.runs.filter(r => !(r.timestamp === lastRunId && r.environments[0].name === environment)) };
+                return { ...p, runs: p.runs.filter(r => !(r.timestamp === lastRunId && r.environments[0].name === cleanEnv)) };
               }));
               toast.info("Run data discarded");
           } catch(e) { toast.error("Failed to delete run"); }
@@ -694,7 +697,7 @@ export default function Index() {
       // We assume "Run Again" discards the previous dry run unless we want to keep history spam.
       // Usually "Re-run" replaces the last attempt.
       if (lastRunId) {
-          await deleteRun(selectedProjectId, environment, lastRunId);
+          await deleteRun(selectedProjectId, cleanEnv, lastRunId);
       }
       
       let jobName = "";
@@ -788,7 +791,7 @@ export default function Index() {
                         liveLog={liveLog}
                         activeRunType={activeRunType}
                         activeRunStatus={activeRunStatus}
-                        reportFullPath={`${selectedProjectId}/${environment.replace(/^\d+-/, '')}/${lastRunId}/${liveReportName || (activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt')}`}
+                        reportFullPath={`${selectedProjectId}/${cleanEnv}/${lastRunId}/${liveReportName || (activeRunType === 'wet' ? 'wet-report.txt' : 'dry-report.txt')}`}
                         onReview={handleReviewComplete}
                         onStop={handleStopRun}
                         onDiscard={handleDiscardRun}
