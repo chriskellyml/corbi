@@ -222,9 +222,6 @@ app.get('/api/projects', async (req, res) => {
                   let options = '';
                   try { options = await fs.readFile(path.join(rPath, 'job.options'), 'utf-8'); } catch(e) {}
                   
-                  let exportContent = '';
-                  try { exportContent = await fs.readFile(path.join(rPath, 'export.csv'), 'utf-8'); } catch(e) {}
-
                   const logs: any[] = [];
                   const logFiles = (await fs.readdir(rPath)).filter(f => f.endsWith('.log'));
                   for (const lf of logFiles) {
@@ -250,7 +247,6 @@ app.get('/api/projects', async (req, res) => {
                       environments: [{
                           name: envName,
                           options,
-                          export: exportContent,
                           logs,
                           scripts: runScripts,
                           reports

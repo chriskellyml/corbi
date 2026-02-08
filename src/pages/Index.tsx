@@ -127,24 +127,15 @@ export default function Index() {
       let logName = files.find(f => f === `${prefix}-output.log`) || files.find(f => f.endsWith('.log')) || `${prefix}-output.log`;
       const log = await getRunFile(projectId, env, runId, logName);
       
-      // Report: Try to find prefix-report.txt, fallback to ANY report.txt, fallback to export.csv
-      let reportName = files.find(f => f === `${prefix}-report.txt`) || files.find(f => f.endsWith('report.txt')) || 'export.csv';
+      // Report: Try to find prefix-report.txt, fallback to ANY report.txt. Default to expected name if missing.
+      let reportName = files.find(f => f === `${prefix}-report.txt`) || files.find(f => f.endsWith('report.txt')) || `${prefix}-report.txt`;
       
       let reportContent = "";
       if (files.includes(reportName)) {
            reportContent = await getRunFile(projectId, env, runId, reportName);
       } else {
-           // Fallback if file listing failed but file might exist
+           // Try fetching even if listing failed (fallback)
            reportContent = await getRunFile(projectId, env, runId, reportName);
-      }
-      
-      // Special check for export.csv if report is empty
-      if (!reportContent && reportName !== 'export.csv' && files.includes('export.csv')) {
-           const csv = await getRunFile(projectId, env, runId, 'export.csv');
-           if (csv) {
-               reportContent = csv;
-               reportName = 'export.csv';
-           }
       }
 
       return { log, reportContent, reportName };
@@ -556,7 +547,6 @@ export default function Index() {
       switch (selection.category) {
           case 'root':
               if (selection.fileName === 'job.options') return env.options;
-              if (selection.fileName === 'export.csv') return env.export;
               return "";
           case 'logs':
               return env.logs.find(f => f.name === selection.fileName)?.content || "";
@@ -750,7 +740,6 @@ export default function Index() {
   
   // Log / Report identification
   const isLog = selection?.kind === 'run' && selection.category === 'logs';
-  const isCsv = selection?.kind === 'run' && selection.fileName === 'export.csv';
   const isReport = selection?.kind === 'run' && selection.category === 'reports';
   
   const isEnvDirty = envFiles[environment]?.content !== originalEnvFiles[environment]?.content;
@@ -857,7 +846,7 @@ export default function Index() {
                             />
                         )}
 
-                        {(isReport || isCsv) && (
+                        {(isReport) && (
                             <ReportViewer 
                                 content={getCurrentFileContent()} 
                                 fileName={selection.fileName}

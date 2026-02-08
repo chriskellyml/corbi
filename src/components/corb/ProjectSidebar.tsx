@@ -454,12 +454,6 @@ function RunItem({ run, projectId, selection, onSelectFile, onDeleteRun }: {
                     isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.fileName === 'job.options'}
                     onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'root', fileName: 'job.options' })}
                 />
-                <RunFileRow 
-                    name="export.csv" 
-                    icon={File} 
-                    isSelected={selection?.kind === 'run' && selection.runId === run.id && selection.fileName === 'export.csv'}
-                    onClick={() => onSelectFile({ kind: 'run', runId: run.id, envName: env.name, category: 'root', fileName: 'export.csv' })}
-                />
 
                 {/* Reports Folder (NEW) */}
                 {env.reports && env.reports.length > 0 && (

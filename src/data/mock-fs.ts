@@ -14,7 +14,6 @@ export interface RunFile {
 export interface RunEnvironment {
   name: string;
   options: string; // content of job.options
-  export: string;  // content of export.csv
   logs: RunFile[];
   scripts: RunFile[];
   reports: RunFile[];
@@ -83,7 +82,6 @@ xdmp:document-delete($URI)`
           {
             name: 'DEV',
             options: `URIS_MODULE=scripts/collect.xqy\nPROCESS_MODULE=scripts/process.xqy\nTHREAD_COUNT=4\nBATCH_SIZE=100\nMODULES_DATABASE=Modules\nHOST=dev-server\nPORT=8010\nUSER=admin`,
-            export: `uri,status\n/doc/1.xml,deleted\n/doc/2.xml,deleted`,
             logs: [
               { name: 'corb.log', content: `INFO: Starting CORB run\nINFO: Found 2 URIs\nINFO: Completed` },
               { name: 'marklogic.log', content: `2024-03-20 10:00:01 Info: Request handling...` }
