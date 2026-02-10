@@ -7,6 +7,7 @@ import path from 'path';
 import multer from 'multer';
 import { exec, spawn } from 'child_process';
 import util from 'util';
+import yaml from 'js-yaml';
 
 const execPromise = util.promisify(exec);
 
@@ -80,6 +81,7 @@ const URIS_DIR = path.join(SUPPORT_DIR, 'uris');
 const PROCESS_DIR = path.join(SUPPORT_DIR, 'process');
 const UPLOADS_DIR = path.join(WORKING_DIR, 'uploads');
 const PERMISSIONS_FILE = path.join(WORKING_DIR, 'permissions.json');
+const ENV_ORDER_FILE = path.join(ENV_DIR, 'order.yaml');
 
 // Ensure working directory exists
 if (!existsSync(WORKING_DIR)) {
@@ -292,14 +294,51 @@ app.get('/api/envs', async (req, res) => {
                 const content = await fs.readFile(path.join(ENV_DIR, file), 'utf-8');
                 
                 // Check if we have a password for this environment
-                const cleanEnvName = name.replace(/^\d+-/, '');
-                const envVarName = `PASSWD_${cleanEnvName.replace(/-/g, '_')}`;
+                const envVarName = `PASSWD_${name.replace(/-/g, '_')}`;
                 const hasPassword = !!loadedEnvVars[envVarName];
 
                 envs[name] = { content, hasPassword };
             }
         }
-        res.json(envs);
+
+        // Handle Ordering via YAML
+        let order: string[] = [];
+        if (existsSync(ENV_ORDER_FILE)) {
+             try {
+                 const orderContent = await fs.readFile(ENV_ORDER_FILE, 'utf-8');
+                 const parsed = yaml.load(orderContent) as any;
+                 if (Array.isArray(parsed)) order = parsed;
+             } catch(e) { console.error("Failed to parse env/order.yaml", e); }
+        }
+
+        // If order is empty or missing items, append them sorted alphabetically
+        const envKeys = Object.keys(envs).sort();
+        if (order.length === 0) {
+            order = envKeys;
+        } else {
+            // Append any missing keys
+            const missing = envKeys.filter(k => !order.includes(k));
+            if (missing.length > 0) {
+                order = [...order, ...missing];
+            }
+            // Filter out keys that no longer exist
+            order = order.filter(k => envKeys.includes(k));
+        }
+
+        res.json({ data: envs, order });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/envs/order
+app.post('/api/envs/order', async (req, res) => {
+    try {
+        const { order } = req.body;
+        if (!Array.isArray(order)) return res.status(400).json({ error: 'Order must be an array' });
+        
+        await fs.writeFile(ENV_ORDER_FILE, yaml.dump(order), 'utf-8');
+        res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -479,9 +518,8 @@ app.post('/api/run', async (req, res) => {
          const runDir = path.join(RUNS_DIR, projectId, envName, timestamp);
          await fs.mkdir(runDir, { recursive: true });
 
-        // Strip ordering prefix (e.g. "01-TEST" -> "TEST") for password lookup
-        const cleanEnvName = envName.replace(/^\d+-/, '');
-        const envVarName = `PASSWD_${cleanEnvName.replace(/-/g, '_')}`;
+        // Password lookup using exact env name
+        const envVarName = `PASSWD_${envName.replace(/-/g, '_')}`;
 
         // Initialize envVars from process.env (which includes loaded .env)
         const envVars = { ...process.env };

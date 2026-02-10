@@ -94,10 +94,8 @@ export function ProjectSidebar({
   // Filter runs for display based on CURRENT ENVIRONMENT
   const filteredRuns = selectedProject?.runs.filter(r => 
     r.environments.some(e => {
-        // The run folder name (e.name) MUST match the stripped current environment
-        // We do NOT strip the run folder name, because the run folder MUST be prefix-free.
-        const cleanCurrentEnv = currentEnv.replace(/^\d+-/, '');
-        return e.name === cleanCurrentEnv;
+        // The run folder name (e.name) MUST match the current environment
+        return e.name === currentEnv;
     })
   ) || [];
 

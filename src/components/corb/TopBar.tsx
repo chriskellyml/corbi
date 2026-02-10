@@ -62,7 +62,6 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
              const isEnabled = jobPermissions ? jobPermissions[env] : undefined;
              const envColor = getEnvColor(env, idx, environments.length);
              const isSelected = currentEnv === env;
-             const cleanName = env.replace(/^\d+-/, '');
 
              return (
                 <div key={env} className="group relative flex items-center">
@@ -87,7 +86,7 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
                                 : "text-white/70 hover:bg-white/10 hover:text-white"
                         )}
                     >
-                        {cleanName}
+                        {env}
                         {isEnabled !== undefined && (
                             <div className={cn(
                                 "h-2 w-2 rounded-full",

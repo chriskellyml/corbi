@@ -10,7 +10,7 @@ import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { RunningView } from "../components/corb/RunningView";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap, EnvData } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile, getRunFiles } from "../lib/api";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile, getRunFiles, saveEnvOrder } from "../lib/api";
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -42,6 +42,7 @@ export default function Index() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [envFiles, setEnvFiles] = useState<Record<string, EnvData>>({});
   const [originalEnvFiles, setOriginalEnvFiles] = useState<Record<string, EnvData>>({});
+  const [envOrder, setEnvOrder] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<PermissionMap>({});
   const [loading, setLoading] = useState(true);
 
@@ -95,16 +96,16 @@ export default function Index() {
 
   const loadData = async () => {
     try {
-        const [p, e, perms] = await Promise.all([fetchProjects(), fetchEnvFiles(), fetchPermissions()]);
+        const [p, envRes, perms] = await Promise.all([fetchProjects(), fetchEnvFiles(), fetchPermissions()]);
         setProjects(p);
-        setEnvFiles(e);
-        setOriginalEnvFiles({ ...e });
+        setEnvFiles(envRes.data);
+        setOriginalEnvFiles({ ...envRes.data });
+        setEnvOrder(envRes.order);
         setPermissions(perms);
         
-        // Ensure environment selection is valid, otherwise pick first
-        const envKeys = Object.keys(e).sort();
-        if ((!environment || !e[environment]) && envKeys.length > 0) {
-             setEnvironment(envKeys[0]);
+        // Ensure environment selection is valid, otherwise pick first from order
+        if ((!environment || !envRes.data[environment]) && envRes.order.length > 0) {
+             setEnvironment(envRes.order[0]);
         }
     } catch (err) {
         toast.error("Failed to load data. Is the server running?");
@@ -186,8 +187,7 @@ export default function Index() {
     };
   }, [runMode, lastRunId, selectedProjectId, environment, activeRunType]);
 
-  const sortedEnvKeys = useMemo(() => Object.keys(envFiles).sort(), [envFiles]);
-  const cleanEnv = environment.replace(/^\d+-/, '');
+  const cleanEnv = environment; // Kept for minimal diff, but now it's just identity
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const currentUserName = (() => {
     const content = envFiles[environment]?.content || "";
@@ -345,51 +345,29 @@ export default function Index() {
   };
 
   const handleMoveEnv = async (envName: string, direction: 'left' | 'right') => {
-      let sorted = [...sortedEnvKeys];
-      const needsNormalization = sorted.some(k => !/^\d+-/.test(k));
-      if (needsNormalization) {
-          const tId = toast.loading("Normalizing environments for ordering...");
-          try {
-              for (let i = 0; i < sorted.length; i++) {
-                  const key = sorted[i];
-                  const clean = key.replace(/^\d+-/, '');
-                  const prefix = String(i + 1).padStart(2, '0');
-                  const newName = `${prefix}-${clean}`;
-                  if (key !== newName) await renameFile(null, `${key}.props`, `${newName}.props`, 'env');
-              }
-              const e = await fetchEnvFiles();
-              setEnvFiles(e);
-              setOriginalEnvFiles({ ...e });
-              sorted = Object.keys(e).sort();
-              const cleanOriginal = envName.replace(/^\d+-/, '');
-              const found = sorted.find(k => k === cleanOriginal || k.endsWith(`-${cleanOriginal}`));
-              if (found) envName = found;
-              toast.dismiss(tId);
-          } catch (e: any) { toast.dismiss(tId); toast.error("Failed to normalize: " + e.message); return; }
-      }
-      const idx = sorted.indexOf(envName);
+      const currentOrder = [...envOrder];
+      const idx = currentOrder.indexOf(envName);
       if (idx === -1) return;
+      
       const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= sorted.length) return;
-      const nameA = sorted[idx];
-      const nameB = sorted[targetIdx];
-      const regex = /^(\d+)-(.*)$/;
-      const matchA = nameA.match(regex);
-      const matchB = nameB.match(regex);
-      if (!matchA || !matchB) { toast.error("Files must have numeric prefixes"); return; }
-      const newNameA = `${matchB[1]}-${matchA[2]}`;
-      const newNameB = `${matchA[1]}-${matchB[2]}`;
-      const tempName = `999-temp-swap`;
+      if (targetIdx < 0 || targetIdx >= currentOrder.length) return;
+      
+      // Swap in array
+      const temp = currentOrder[idx];
+      currentOrder[idx] = currentOrder[targetIdx];
+      currentOrder[targetIdx] = temp;
+      
+      // Optimistic update
+      setEnvOrder(currentOrder);
+      
+      // Save
       try {
-          await renameFile(null, `${nameA}.props`, `${tempName}.props`, 'env');
-          await renameFile(null, `${nameB}.props`, `${newNameB}.props`, 'env');
-          await renameFile(null, `${tempName}.props`, `${newNameA}.props`, 'env');
-          const e = await fetchEnvFiles();
-          setEnvFiles(e);
-          setOriginalEnvFiles({ ...e });
-          if (environment === nameA) setEnvironment(newNameA);
-          else if (environment === nameB) setEnvironment(newNameB);
-      } catch (e: any) { toast.error("Failed to move env: " + e.message); }
+          await saveEnvOrder(currentOrder);
+      } catch (e: any) {
+          toast.error("Failed to save order: " + e.message);
+          // Revert on failure
+          setEnvOrder(envOrder); 
+      }
   };
 
   const submitFileOp = async () => {
@@ -753,7 +731,7 @@ export default function Index() {
     <div className="h-screen w-full flex flex-col bg-background overflow-hidden">
       <TopBar 
         currentEnv={environment} 
-        environments={sortedEnvKeys}
+        environments={envOrder}
         onEnvChange={setEnvironment} 
         onMoveEnv={handleMoveEnv}
         jobPermissions={currentJobPermissions}

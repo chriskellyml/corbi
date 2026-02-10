@@ -8,10 +8,19 @@ export async function fetchProjects(): Promise<Project[]> {
   return res.json();
 }
 
-export async function fetchEnvFiles(): Promise<Record<string, EnvData>> {
+export async function fetchEnvFiles(): Promise<{ data: Record<string, EnvData>, order: string[] }> {
   const res = await fetch(`${API_BASE}/envs`);
   if (!res.ok) throw new Error("Failed to fetch envs");
   return res.json();
+}
+
+export async function saveEnvOrder(order: string[]): Promise<void> {
+    const res = await fetch(`${API_BASE}/envs/order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order })
+    });
+    if (!res.ok) throw new Error("Failed to save environment order");
 }
 
 export async function fetchPermissions(): Promise<PermissionMap> {
