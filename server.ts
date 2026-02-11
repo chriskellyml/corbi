@@ -541,14 +541,14 @@ const executeAsync = () => {
   if (options.dryRun) {
     // Run dry only
     const dryArgs = [
-      `./run.sh`,
-      `--env=${envName}`,
-      `--project=${projectId}`,
-      `--job=${jobNameNoExt}`,
-      `--dry-run=true`,
-      `--run-id=${timestamp}`,
-      options.limit ? `--limit=${options.limit}` : '',
-      '--skip-proceed-confirmation'
+      `./gradlew`,
+      `runCorb`,
+      `-Penv=${envName}`,
+      `-PcorbProject=${projectId}`,
+      `-Pjob=${jobNameNoExt}`,
+      `-PdryRun=true`,
+      `-PrunId=${timestamp}`,
+      options.limit ? `-Plimit=${options.limit}` : ''
     ].filter(Boolean);
 
     const dryLogPath = path.join(runDir, 'dry-output.log');
@@ -587,14 +587,14 @@ const executeAsync = () => {
     } else {
       // Run dry then chain wet
       const dryArgs = [
-        `./run.sh`,
-        `--env=${envName}`,
-        `--project=${projectId}`,
-        `--job=${jobNameNoExt}`,
-        `--dry-run=true`,
-        `--run-id=${timestamp}`,
-        options.limit ? `--limit=${options.limit}` : '',
-        '--skip-proceed-confirmation'
+        `./gradlew`,
+        `runCorb`,
+        `-Penv=${envName}`,
+        `-PcorbProject=${projectId}`,
+        `-Pjob=${jobNameNoExt}`,
+        `-PdryRun=true`,
+        `-PrunId=${timestamp}`,
+        options.limit ? `-Plimit=${options.limit}` : ''
       ].filter(Boolean);
 
       const dryLogPath = path.join(runDir, 'dry-output.log');
@@ -635,13 +635,13 @@ const executeAsync = () => {
 
   function runWet() {
     const wetArgs = [
-      `./run.sh`,
-      `--env=${envName}`,
-      `--project=${projectId}`,
-      `--job=${jobNameNoExt}`,
-      `--dry-run=false`,
-      `--run-id=${timestamp}`,
-      '--skip-proceed-confirmation'
+      `./gradlew`,
+      `runCorb`,
+      `-Penv=${envName}`,
+      `-PcorbProject=${projectId}`,
+      `-Pjob=${jobNameNoExt}`,
+      `-PdryRun=false`,
+      `-PrunId=${timestamp}`
     ].filter(Boolean);
 
     const wetLogPath = path.join(runDir, 'wet-output.log');

@@ -14,7 +14,6 @@ import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, 
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { MadeWithDyad } from "../components/made-with-dyad";
 import { Textarea } from "../components/ui/textarea";
 import { Input } from "../components/ui/input";
 import {
@@ -867,13 +866,7 @@ export default function Index() {
                 </div>
                 ))}
           </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground bg-dot-pattern">
-             <div className="text-center max-w-lg">
-                <MadeWithDyad />
-             </div>
-          </div>
-        )}
+        ) : ( <div /> )}
 
         {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES - ONLY VISIBLE IN IDLE MODE */}
         {runMode === 'idle' && (
