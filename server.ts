@@ -12,8 +12,8 @@ import yaml from 'js-yaml';
 const execPromise = util.promisify(exec);
 
 const app = express();
-const PORT = 3001;
-const WORKING_DIR = '/Users/chkelly/Workspace/projects/lvbb/kt/1-beheer-scripts/corb-new/';
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const WORKING_DIR = process.env.CORBI_DATA_DIR || process.cwd();
 
 // Setup logging
 const LOGS_DIR = path.join(process.cwd(), 'logs');

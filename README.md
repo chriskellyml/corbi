@@ -32,19 +32,25 @@ cp env/LOCAL.props.template env/LOCAL.props
 ./gradlew setup
 ```
 
-### 3. Configure CoRBi to Use Your Data
+### 3. Start CoRBi
 
-Open `server.ts` and update the `WORKING_DIR` variable to point to your data repository:
-
-```typescript
-const WORKING_DIR = '/path/to/your/my-corbi-data/';
-```
-
-### 4. Start CoRBi
+Copy the environment template and configure your data directory:
 
 ```bash
+cp dot.env.template .env
+# Edit .env and set CORBI_DATA_DIR to your corbi-data-template path
+```
+
+Then run:
+
+```bash
+# Using pnpm (recommended)
 pnpm install
 pnpm dev
+
+# Or using npm
+npm install
+npm run dev
 ```
 
 Open http://localhost:8080 in your browser.
