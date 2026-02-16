@@ -866,7 +866,14 @@ export default function Index() {
                 </div>
                 ))}
           </div>
-        ) : ( <div /> )}
+        ) : (
+           <div className="flex-1 flex items-center justify-center text-muted-foreground bg-dot-pattern">
+              <div className="text-center max-w-lg">
+                 <div>(c) Progress</div>
+              </div>
+           </div>
+         )
+        }
 
         {/* RIGHT COLUMN: ENVIRONMENT / OVERRIDES - ONLY VISIBLE IN IDLE MODE */}
         {runMode === 'idle' && (
@@ -991,3 +998,5 @@ export default function Index() {
     </div>
   );
 }
+
+
