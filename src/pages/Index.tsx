@@ -209,7 +209,7 @@ export default function Index() {
 
   const isCurrentJobEnabled = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return false;
-      return permissions[selectedProjectId]?.[selection.name]?.[environment] === true;
+      return permissions[selectedProjectId]?.[selection.name]?.[environment] !== false;
   }, [permissions, selectedProjectId, selection, environment]);
 
   const currentJobPermissions: Record<string, boolean> | undefined = useMemo(() => {

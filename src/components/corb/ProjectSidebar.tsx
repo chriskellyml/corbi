@@ -130,7 +130,7 @@ export function ProjectSidebar({
 
   // PROJECT DETAIL VIEW
   return (
-    <div className="w-72 bg-sidebar border-r border-border h-full flex flex-col animate-in slide-in-from-left-4 duration-200">
+    <div className="w-80 bg-sidebar border-r border-border h-full flex flex-col animate-in slide-in-from-left-4 duration-200">
       {/* Header with Back Button */}
       <div className="p-4 border-b border-border bg-sidebar-accent/10">
         <Button 
@@ -148,6 +148,7 @@ export function ProjectSidebar({
       </div>
 
       <ScrollArea className="flex-1">
+        <div className="pr-4">
         <Accordion type="multiple" defaultValue={["definition", "runs"]} className="w-full">
           
           {/* DEFINITION SECTION */}
@@ -167,7 +168,7 @@ export function ProjectSidebar({
                </div>
                
                {sortedJobs.map((job, index) => {
-                 const isEnabled = permissions?.[selectedProject.id]?.[job.name]?.[currentEnv] === true;
+                  const isEnabled = permissions?.[selectedProject.id]?.[job.name]?.[currentEnv] !== false;
                  
                  return (
                     <FileItem
@@ -267,6 +268,7 @@ export function ProjectSidebar({
           </AccordionItem>
           
         </Accordion>
+        </div>
       </ScrollArea>
     </div>
   );
@@ -298,38 +300,23 @@ function FileItem({
   return (
     <div
       className={cn(
-        "group w-full flex items-center gap-2 px-6 py-2 text-sm transition-all border-l-4 border-transparent relative cursor-pointer",
+        "group w-full flex items-center gap-2 px-4 py-2 text-sm transition-all border-l-4 border-transparent relative cursor-pointer overflow-visible",
         !isSelected && "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:border-sidebar-accent-foreground/10 text-muted-foreground",
         isSelected && "bg-primary text-primary-foreground border-l-blue-500 font-medium shadow-sm"
       )}
       onClick={onClick}
     >
       <Icon className={cn("h-4 w-4 shrink-0 transition-colors", isSelected ? "text-primary-foreground" : iconColor)} />
-      <span className={cn("truncate flex-1", disabled && !isSelected && "opacity-70")} title={name}>{displayName}</span>
+      <div className="flex-1 min-w-0">
+        <span className={cn("block truncate", disabled && !isSelected && "opacity-70")} title={name}>{displayName}</span>
+      </div>
       {statusIndicator && <div className={cn(isSelected ? "text-primary-foreground/70" : "")}>{statusIndicator}</div>}
       
       {/* Actions (visible on hover) */}
       <div className={cn(
-        "flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 rounded-sm shadow-sm pl-2",
-        isSelected ? "bg-primary text-primary-foreground" : "bg-sidebar-accent"
+        "flex items-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-1 rounded-sm shadow-sm pl-1 z-50",
+        isSelected ? "bg-primary text-primary-foreground" : "bg-sidebar-accent border border-border"
       )}>
-          {type === 'job' && !disabled && (
-              <>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className={cn(
-                        "h-6 w-6", 
-                        isSelected ? "text-primary-foreground hover:bg-primary-foreground/10" : "text-green-600 hover:text-green-700 hover:bg-green-100"
-                    )}
-                    onClick={(e) => { e.stopPropagation(); onRun(); }}
-                    title="Run Job"
-                  >
-                      <Play className="h-3 w-3 fill-current" />
-                  </Button>
-              </>
-          )}
-
           {/* Ordering Buttons */}
           {(onMoveUp || onMoveDown) && (
              <div className="flex flex-col -space-y-1 mr-1">
