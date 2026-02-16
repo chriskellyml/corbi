@@ -8,6 +8,10 @@ import multer from 'multer';
 import { exec, spawn } from 'child_process';
 import util from 'util';
 import yaml from 'js-yaml';
+import dotenv from 'dotenv';
+
+// Load .env from repo root first (before CORBI_DATA_DIR is resolved)
+dotenv.config({ path: path.join(process.cwd(), '.env') });
 
 const execPromise = util.promisify(exec);
 

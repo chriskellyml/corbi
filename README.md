@@ -34,26 +34,61 @@ cp env/LOCAL.props.template env/LOCAL.props
 
 ### 3. Start CoRBi
 
-Copy the environment template and configure your data directory:
+**Option A: Using Make (Recommended)**
+
+Copy the environment template:
 
 ```bash
 cp dot.env.template .env
 # Edit .env and set CORBI_DATA_DIR to your corbi-data-template path
 ```
 
-Then run:
+Then run with the data directory:
 
 ```bash
-# Using pnpm (recommended)
+make install
+make start CORBI_DATA_DIR=/path/to/your/corbi-data
+```
+
+Or if you already set `CORBI_DATA_DIR` in `.env`:
+
+```bash
+make install
+make start
+```
+
+**Option B: Using pnpm directly**
+
+```bash
+cp dot.env.template .env
+# Edit .env and set CORBI_DATA_DIR to your corbi-data-template path
+
 pnpm install
 pnpm dev
+```
 
-# Or using npm
+Or set the environment variable directly:
+
+```bash
+CORBI_DATA_DIR=/path/to/your/corbi-data pnpm dev
+```
+
+**Option C: Using npm**
+
+```bash
 npm install
-npm run dev
+CORBI_DATA_DIR=/path/to/your/corbi-data npm run dev
 ```
 
 Open http://localhost:8080 in your browser.
+
+### Environment Variable Resolution
+
+CoRBi resolves `CORBI_DATA_DIR` in this order (highest to lowest priority):
+
+1. **Command-line override:** `make start CORBI_DATA_DIR=/path` or `CORBI_DATA_DIR=/path pnpm dev`
+2. **Repository `.env` file:** Set `CORBI_DATA_DIR=...` in the repo root's `.env`
+3. **Default:** Repository root (looks for `src/projects/`, `env/`, etc. in the current directory)
 
 ## Running a Sample Job
 
