@@ -1,5 +1,6 @@
+import { useMemo, useState, type ReactNode } from "react";
 import { Project, ProjectRun, PermissionMap } from "../../types";
-import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, File, Trash2, MoreHorizontal, Play, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, Unlock, FileSpreadsheet } from "lucide-react";
+import { FolderGit2, Search, ArrowLeft, History, FileText, FileCode, PlayCircle, Folder, Trash2, MoreHorizontal, Copy, Pencil, Plus, FileCog, Link2Off, ChevronUp, ChevronDown, Lock, FileSpreadsheet, type LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -7,6 +8,7 @@ import { ScrollArea } from "../../components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Badge } from "../../components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../../components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
 
 // Define the selection structure shared with parent
@@ -14,12 +16,38 @@ export type SelectionType =
   | { kind: 'source'; type: 'job' | 'script'; name: string }
   | { kind: 'run'; runId: string; envName: string; category: 'root' | 'logs' | 'scripts' | 'reports'; fileName: string };
 
+interface FileItemProps {
+  name: string;
+  icon: LucideIcon;
+  iconColor: string;
+  isSelected: boolean;
+  onClick: () => void;
+  onCopy: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  onRun?: () => void;
+  showDeleteButton?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  statusIndicator?: ReactNode;
+  disabled?: boolean;
+}
+
+interface RunFileRowProps {
+  name: string;
+  icon: LucideIcon;
+  isSelected: boolean;
+  onClick: () => void;
+  indent?: boolean;
+}
+
 interface ProjectSidebarProps {
   projects: Project[];
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
   selection: SelectionType | null;
   onSelectFile: (selection: SelectionType) => void;
+  onCreateProject: (name: string) => Promise<void>;
   onDeleteRun: (projectId: string, envName: string, runId: string) => void;
   // New props for source management
   onCreateJob: (projectId: string) => void;
@@ -40,6 +68,7 @@ export function ProjectSidebar({
   onSelectProject, 
   selection,
   onSelectFile,
+  onCreateProject,
   onDeleteRun,
   onCreateJob,
   onRunJob,
@@ -50,8 +79,17 @@ export function ProjectSidebar({
   permissions,
   currentEnv
 }: ProjectSidebarProps) {
+  const [projectFilter, setProjectFilter] = useState("");
+  const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const filteredProjects = useMemo(() => {
+      const query = projectFilter.trim().toLowerCase();
+      if (!query) return projects;
+      return projects.filter((project) => project.name.toLowerCase().includes(query));
+  }, [projects, projectFilter]);
 
   // 1. Identify Linked Scripts
   const linkedScripts = new Set<string>();
@@ -105,14 +143,34 @@ export function ProjectSidebar({
       <div className="w-64 bg-sidebar border-r border-border h-full flex flex-col">
         <div className="p-4 border-b border-border">
           <h2 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wider">Projects</h2>
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Filter projects..." className="pl-8 h-9 text-sm" />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                placeholder="Filter projects..."
+                className="pl-8 h-9 text-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              onClick={() => {
+                setNewProjectName("");
+                setIsCreateProjectDialogOpen(true);
+              }}
+              title="Create project"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
         </div>
         <ScrollArea className="flex-1">
           <div className="py-2">
-            {projects.map((project) => (
+            {filteredProjects.map((project) => (
               <button
                 key={project.id}
                 onClick={() => onSelectProject(project.id)}
@@ -122,8 +180,54 @@ export function ProjectSidebar({
                 <span className="truncate font-medium">{project.name}</span>
               </button>
             ))}
+            {filteredProjects.length === 0 && (
+              <div className="px-4 py-6 text-sm text-muted-foreground">
+                {projectFilter.trim() ? "No matching projects." : "No projects yet."}
+              </div>
+            )}
           </div>
         </ScrollArea>
+        <Dialog open={isCreateProjectDialogOpen} onOpenChange={setIsCreateProjectDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Project</DialogTitle>
+              <DialogDescription>
+                A new project folder will be created with empty `scripts`, `scripts/uris`, and `scripts/process` directories.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-2">
+              <Input
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="project-name"
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsCreateProjectDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={async () => {
+                  setIsCreatingProject(true);
+                  try {
+                    await onCreateProject(newProjectName);
+                    setIsCreateProjectDialogOpen(false);
+                    setNewProjectName("");
+                  } catch {
+                    // Keep the dialog open so the user can correct the name.
+                  } finally {
+                    setIsCreatingProject(false);
+                  }
+                }}
+                disabled={!newProjectName.trim() || isCreatingProject}
+              >
+                {isCreatingProject ? "Creating..." : "Create"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -174,12 +278,10 @@ export function ProjectSidebar({
                     <FileItem
                     key={job.name}
                     name={job.name}
-                    type="job"
                     icon={FileCog} 
                     iconColor={isEnabled ? "text-blue-500" : "text-gray-400"}
                     isSelected={selection?.kind === 'source' && selection.name === job.name}
                     onClick={() => onSelectFile({ kind: 'source', type: 'job', name: job.name })}
-                    onRun={() => onRunJob(job.name)}
                     onCopy={() => onCopyFile(selectedProject.id, job.name, 'job')}
                     onRename={() => onRenameFile(selectedProject.id, job.name, 'job')}
                     onDelete={() => onDeleteFile(selectedProject.id, job.name, 'job')}
@@ -199,7 +301,6 @@ export function ProjectSidebar({
                      <FileItem
                        key={script.name}
                        name={script.name}
-                       type="script"
                        icon={FileCode}
                        iconColor="text-yellow-500"
                        isSelected={selection?.kind === 'source' && selection.name === script.name}
@@ -223,7 +324,6 @@ export function ProjectSidebar({
                      <FileItem
                        key={script.name}
                        name={script.name}
-                       type="script"
                        icon={FileCode}
                        iconColor="text-gray-400"
                        isSelected={selection?.kind === 'source' && selection.name === script.name}
@@ -278,12 +378,10 @@ export function ProjectSidebar({
 
 function FileItem({ 
     name, 
-    type, 
     icon: Icon, 
     iconColor, 
     isSelected, 
     onClick, 
-    onRun, 
     onCopy, 
     onRename, 
     onDelete, 
@@ -292,7 +390,7 @@ function FileItem({
     onMoveDown,
     statusIndicator,
     disabled
-}: any) {
+}: FileItemProps) {
     
   // Parse numeric prefix for display
   const displayName = name.replace(/\.(job|xqy|sjs|js|txt)$/, '');
@@ -328,7 +426,10 @@ function FileItem({
                         isSelected ? "text-primary-foreground/70 hover:bg-primary-foreground/10" : "hover:bg-primary/10",
                         !onMoveUp && "invisible"
                     )}
-                    onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onMoveUp) onMoveUp();
+                    }}
                     title="Move Up"
                 >
                     <ChevronUp className="h-2 w-2" />
@@ -341,7 +442,10 @@ function FileItem({
                         isSelected ? "text-primary-foreground/70 hover:bg-primary-foreground/10" : "hover:bg-primary/10",
                         !onMoveDown && "invisible"
                     )}
-                    onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onMoveDown) onMoveDown();
+                    }}
                     title="Move Down"
                 >
                     <ChevronDown className="h-2 w-2" />
@@ -500,7 +604,7 @@ function RunItem({ run, projectId, selection, onSelectFile, onDeleteRun }: {
   );
 }
 
-function RunFileRow({ name, icon: Icon, isSelected, onClick, indent }: any) {
+function RunFileRow({ name, icon: Icon, isSelected, onClick, indent }: RunFileRowProps) {
   return (
     <button
       onClick={onClick}

@@ -1,11 +1,14 @@
 import { cn } from "../../lib/utils";
-import { Check, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderOpen } from "lucide-react";
+import { Button } from "../ui/button";
 
 interface TopBarProps {
   currentEnv: string;
   environments: string[];
   onEnvChange: (env: string) => void;
   onMoveEnv: (env: string, direction: 'left' | 'right') => void;
+  dataDir: string;
+  onOpenDataDir: () => void;
   // Optional: Permissions for a selected job
   jobPermissions?: Record<string, boolean>;
 }
@@ -26,7 +29,27 @@ const ENV_COLOR_SCALE = [
 
 const DEFAULT_COLOR = "bg-slate-700 border-slate-600";
 
-export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPermissions }: TopBarProps) {
+function getCompactPathLabel(dataDir: string) {
+  if (!dataDir) return "No data directory";
+
+  const normalized = dataDir.replace(/[\\/]+$/, "");
+  if (!normalized) return dataDir;
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  if (parts.length === 0) return normalized;
+  if (parts.length === 1) return parts[0];
+
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
+export function TopBar({
+  currentEnv,
+  environments,
+  onEnvChange,
+  onMoveEnv,
+  dataDir,
+  onOpenDataDir,
+  jobPermissions,
+}: TopBarProps) {
   
   // Sort environments alpha-numerically (they might already be, but good to ensure display consistency)
   // We assume the parent passes them in the desired order (from file system names).
@@ -44,6 +67,7 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
 
   const currentIndex = environments.indexOf(currentEnv);
   const currentColor = currentIndex !== -1 ? getEnvColor(currentEnv, currentIndex, environments.length) : DEFAULT_COLOR;
+  const compactPathLabel = getCompactPathLabel(dataDir);
 
   return (
     <div className={cn(
@@ -56,6 +80,17 @@ export function TopBar({ currentEnv, environments, onEnvChange, onMoveEnv, jobPe
       </div>
       
       <div className="flex items-center gap-4">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={onOpenDataDir}
+          className="h-9 border border-white/15 bg-black/20 px-3 text-white hover:bg-black/30 hover:text-white"
+          title={dataDir}
+        >
+          <FolderOpen className="mr-2 h-4 w-4" />
+          <span className="max-w-[220px] truncate text-xs font-medium">{compactPathLabel}</span>
+        </Button>
         <span className="text-sm font-medium opacity-90">Environment:</span>
         <div className="flex bg-black/20 p-1.5 rounded-xl gap-2">
           {environments.map((env, idx) => {

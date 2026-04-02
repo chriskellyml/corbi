@@ -1,11 +1,59 @@
-import { Project, PermissionMap, EnvData } from "../types";
+import { Project, PermissionMap, EnvData, DataDirectoryConfig } from "../types";
 
-const API_BASE = "http://localhost:3001/api";
+const API_BASE = "/api";
+
+async function readJsonOrThrow<T>(res: Response, fallbackMessage: string): Promise<T> {
+  if (!res.ok) {
+    let message = fallbackMessage;
+    try {
+      const error = await res.json();
+      message = error.error || fallbackMessage;
+    } catch {
+      // Ignore JSON parsing errors and keep the fallback message.
+    }
+    throw new Error(message);
+  }
+
+  return res.json();
+}
+
+export async function fetchDataDirectoryConfig(): Promise<DataDirectoryConfig> {
+  const res = await fetch(`${API_BASE}/config/data-dir`);
+  return readJsonOrThrow<DataDirectoryConfig>(res, "Failed to fetch data directory");
+}
+
+export async function setDataDirectory(dataDir: string): Promise<DataDirectoryConfig> {
+  const res = await fetch(`${API_BASE}/config/data-dir`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataDir }),
+  });
+
+  return readJsonOrThrow<DataDirectoryConfig>(res, "Failed to update data directory");
+}
+
+export async function browseDataDirectory(): Promise<DataDirectoryConfig> {
+  const res = await fetch(`${API_BASE}/config/data-dir/browse`, {
+    method: "POST",
+  });
+
+  return readJsonOrThrow<DataDirectoryConfig>(res, "Failed to browse for a data directory");
+}
 
 export async function fetchProjects(): Promise<Project[]> {
   const res = await fetch(`${API_BASE}/projects`);
   if (!res.ok) throw new Error("Failed to fetch projects");
   return res.json();
+}
+
+export async function createProject(name: string): Promise<{ id: string; name: string }> {
+  const res = await fetch(`${API_BASE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+
+  return readJsonOrThrow<{ id: string; name: string }>(res, "Failed to create project");
 }
 
 export async function fetchEnvFiles(): Promise<{ data: Record<string, EnvData>, order: string[] }> {
