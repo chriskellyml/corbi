@@ -23,6 +23,7 @@ interface RunningViewProps {
     onDiscard: (keepData: boolean) => void;
     onRunAgain: (options: RunOptions) => void;
     onExecuteWet: (options: RunOptions) => void;
+    onReauthenticate?: () => void;
     onRefreshReport?: () => void;
 }
 
@@ -38,6 +39,7 @@ export function RunningView({
     onDiscard,
     onRunAgain,
     onExecuteWet,
+    onReauthenticate,
     onRefreshReport
 }: RunningViewProps) {
     const topRef = useRef<ImperativePanelHandle>(null);
@@ -154,6 +156,7 @@ export function RunningView({
                 onDiscard={onDiscard}
                 onRunAgain={onRunAgain}
                 onExecuteWet={onExecuteWet}
+                onReauthenticate={onReauthenticate}
              />
         </div>
     );

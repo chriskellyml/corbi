@@ -39,6 +39,10 @@ export interface EnvData {
     hasPassword?: boolean;
 }
 
+export interface DataDirectoryConfig {
+    dataDir: string;
+}
+
 export type Environment = string; 
 
 // Permissions: ProjectID -> JobName -> EnvName -> boolean

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "../../components/ui/button";
-import { CheckCircle, Loader2, Square, PlayCircle, Play, RefreshCw, Trash2, AlertCircle } from "lucide-react";
+import { CheckCircle, Loader2, Square, PlayCircle, Play, RefreshCw, Trash2, AlertCircle, Lock } from "lucide-react";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Checkbox } from "../../components/ui/checkbox";
@@ -17,6 +17,7 @@ interface RunningFooterProps {
     onDiscard?: (keepData: boolean) => void;
     onRunAgain?: (options: RunOptions) => void;
     onExecuteWet?: (options: RunOptions) => void;
+    onReauthenticate?: () => void;
 }
 
 export function RunningFooter({ 
@@ -26,7 +27,8 @@ export function RunningFooter({
     onStop,
     onDiscard,
     onRunAgain,
-    onExecuteWet
+    onExecuteWet,
+    onReauthenticate
 }: RunningFooterProps) {
     // Local state for re-run options
     const [limit, setLimit] = useState("10");
@@ -127,6 +129,19 @@ export function RunningFooter({
                 {/* Dry Run Actions */}
                 {isDryFinished && (
                     <div className="flex items-center gap-3">
+                         {status === 'error' && onReauthenticate && (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={onReauthenticate}
+                                    className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                                >
+                                    <Lock className="h-4 w-4 mr-2" />
+                                    Re-authenticate
+                                </Button>
+                                <div className="w-px h-6 bg-border mx-1" />
+                            </>
+                         )}
                          <div className="flex items-center gap-2 mr-2">
                             <Checkbox 
                                 id="keep-data" 
@@ -168,12 +183,24 @@ export function RunningFooter({
 
                 {/* Wet Run Actions */}
                 {isWetFinished && (
-                    <Button 
-                        onClick={onReview}
-                        className="gap-2 font-semibold shadow-sm text-white min-w-[140px] bg-zinc-700 hover:bg-zinc-800"
-                    >
-                        Review Complete
-                    </Button>
+                    <div className="flex items-center gap-3">
+                        {status === 'error' && onReauthenticate && (
+                            <Button
+                                variant="outline"
+                                onClick={onReauthenticate}
+                                className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                            >
+                                <Lock className="h-4 w-4 mr-2" />
+                                Re-authenticate
+                            </Button>
+                        )}
+                        <Button 
+                            onClick={onReview}
+                            className="gap-2 font-semibold shadow-sm text-white min-w-[140px] bg-zinc-700 hover:bg-zinc-800"
+                        >
+                            Review Complete
+                        </Button>
+                    </div>
                 )}
             </div>
         </div>

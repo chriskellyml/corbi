@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { TopBar } from "../components/corb/TopBar";
+import { DataDirectoryDialog } from "../components/corb/DataDirectoryDialog";
 import { ProjectSidebar, SelectionType } from "../components/corb/ProjectSidebar";
 import { PropertiesEditor } from "../components/corb/PropertiesEditor";
 import { ScriptEditor } from "../components/corb/ScriptEditor";
@@ -10,7 +11,7 @@ import { RunFooter, RunOptions, RunAction } from "../components/corb/RunFooter";
 import { RunningView } from "../components/corb/RunningView";
 import { PasswordDialog } from "../components/corb/PasswordDialog";
 import { Project, ProjectRun, PermissionMap, EnvData } from "../types";
-import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile, getRunFiles, saveEnvOrder } from "../lib/api";
+import { fetchProjects, fetchEnvFiles, saveFile, createRun, stopRun, deleteRun, copyFile, renameFile, deleteFile, fetchPermissions, savePermissions, getRunStatus, getRunFile, getRunFiles, saveEnvOrder, setDataDirectory, browseDataDirectory, createProject } from "../lib/api";
 import { AlertTriangle, Save, Lock, Unlock, KeyRound, RotateCcw, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
@@ -30,6 +31,52 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { cn } from "../lib/utils";
 
 type RunMode = 'idle' | 'running' | 'review';
+const DATA_DIR_STORAGE_KEY = "corbi:last-data-dir";
+const PASSWORD_CACHE_STORAGE_KEY = "corbi:password-cache";
+const PASSWORD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface PasswordCacheEntry {
+  password: string;
+  expiresAt: number;
+}
+
+type PasswordCache = Record<string, PasswordCacheEntry>;
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizePasswordCache(cache: PasswordCache, now = Date.now()): PasswordCache {
+  return Object.fromEntries(
+    Object.entries(cache).filter(([, entry]) => (
+      typeof entry?.password === "string" &&
+      typeof entry?.expiresAt === "number" &&
+      entry.expiresAt > now
+    )),
+  );
+}
+
+function readPasswordCache(): PasswordCache {
+  try {
+    const raw = window.localStorage.getItem(PASSWORD_CACHE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as PasswordCache;
+    return normalizePasswordCache(parsed);
+  } catch {
+    return {};
+  }
+}
+
+function writePasswordCache(cache: PasswordCache) {
+  const normalized = normalizePasswordCache(cache);
+  if (Object.keys(normalized).length === 0) {
+    window.localStorage.removeItem(PASSWORD_CACHE_STORAGE_KEY);
+    return normalized;
+  }
+
+  window.localStorage.setItem(PASSWORD_CACHE_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
 
 export default function Index() {
   const [environment, setEnvironment] = useState<string>('LOC');
@@ -44,6 +91,12 @@ export default function Index() {
   const [envOrder, setEnvOrder] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<PermissionMap>({});
   const [loading, setLoading] = useState(true);
+  const [dataDir, setDataDir] = useState("");
+  const [dataDirDraft, setDataDirDraft] = useState("");
+  const [dataDirConfigured, setDataDirConfigured] = useState(false);
+  const [isDataDirDialogOpen, setIsDataDirDialogOpen] = useState(false);
+  const [isSavingDataDir, setIsSavingDataDir] = useState(false);
+  const [isBrowsingDataDir, setIsBrowsingDataDir] = useState(false);
 
   // Run State
   const [lastRunId, setLastRunId] = useState<string | null>(null);
@@ -67,7 +120,7 @@ export default function Index() {
 
   // Password Logic
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [sessionPasswords, setSessionPasswords] = useState<Record<string, string>>({}); 
+  const [passwordCache, setPasswordCache] = useState<PasswordCache>({});
   const [pendingRunOptions, setPendingRunOptions] = useState<RunOptions | null>(null);
   const [pendingRunJobName, setPendingRunJobName] = useState<string | null>(null);
   const [pendingRunAction, setPendingRunAction] = useState<RunAction | null>(null);
@@ -76,8 +129,15 @@ export default function Index() {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    loadData();
+    initializeApp();
   }, []);
+
+  useEffect(() => {
+    const normalized = writePasswordCache(passwordCache);
+    if (JSON.stringify(normalized) !== JSON.stringify(passwordCache)) {
+      setPasswordCache(normalized);
+    }
+  }, [passwordCache]);
 
   // Reset lastRunId when switching jobs or projects
   useEffect(() => {
@@ -93,6 +153,35 @@ export default function Index() {
       };
   }, []);
 
+  const initializeApp = async () => {
+    setPasswordCache(readPasswordCache());
+    const storedDataDir = window.localStorage.getItem(DATA_DIR_STORAGE_KEY)?.trim();
+
+    if (!storedDataDir) {
+        // No saved directory -- prompt the user to pick one
+        setIsDataDirDialogOpen(true);
+        setLoading(false);
+        return;
+    }
+
+    try {
+        const config = await setDataDirectory(storedDataDir);
+        setDataDir(config.dataDir);
+        setDataDirDraft(config.dataDir);
+        window.localStorage.setItem(DATA_DIR_STORAGE_KEY, config.dataDir);
+        setDataDirConfigured(true);
+        await loadData();
+    } catch (err) {
+        // Stored path is no longer valid -- clear it and prompt again
+        window.localStorage.removeItem(DATA_DIR_STORAGE_KEY);
+        toast.error("Previously saved data directory is no longer available. Please select a new one.");
+        console.error(err);
+        setIsDataDirDialogOpen(true);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const loadData = async () => {
     try {
         const [p, envRes, perms] = await Promise.all([fetchProjects(), fetchEnvFiles(), fetchPermissions()]);
@@ -107,10 +196,72 @@ export default function Index() {
              setEnvironment(envRes.order[0]);
         }
     } catch (err) {
-        toast.error("Failed to load data. Is the server running?");
+        toast.error("Failed to load data from the selected directory.");
         console.error(err);
+    }
+  };
+
+  const resetWorkspaceState = () => {
+    setSelectedProjectId(null);
+    setSelection(null);
+    setLastRunId(null);
+    setRunMode('idle');
+    setActiveRunStatus('running');
+    setLiveReport("");
+    setLiveReportName("");
+    setLiveLog("");
+  };
+
+  const applyDataDirectoryConfig = async (nextDataDir: string) => {
+    const config = await setDataDirectory(nextDataDir);
+    window.localStorage.setItem(DATA_DIR_STORAGE_KEY, config.dataDir);
+    setDataDir(config.dataDir);
+    setDataDirDraft(config.dataDir);
+    setDataDirConfigured(true);
+    resetWorkspaceState();
+    await loadData();
+    toast.success("Data directory updated");
+    setIsDataDirDialogOpen(false);
+  };
+
+  const handleSaveDataDirectory = async () => {
+    if (!dataDirDraft.trim()) {
+        toast.error("Enter a data directory path.");
+        return;
+    }
+
+    setIsSavingDataDir(true);
+    try {
+        await applyDataDirectoryConfig(dataDirDraft.trim());
+    } catch (error) {
+        toast.error(getErrorMessage(error) || "Failed to update data directory");
+        console.error(error);
     } finally {
-        setLoading(false);
+        setIsSavingDataDir(false);
+    }
+  };
+
+  const handleBrowseDataDirectory = async () => {
+    setIsBrowsingDataDir(true);
+    try {
+        const config = await browseDataDirectory();
+        window.localStorage.setItem(DATA_DIR_STORAGE_KEY, config.dataDir);
+        setDataDir(config.dataDir);
+        setDataDirDraft(config.dataDir);
+        setDataDirConfigured(true);
+        resetWorkspaceState();
+        await loadData();
+        toast.success("Data directory updated");
+        setIsDataDirDialogOpen(false);
+    } catch (error) {
+        const msg = getErrorMessage(error);
+        // Don't show an error toast if the user just cancelled the OS dialog
+        if (msg && !msg.toLowerCase().includes('cancelled')) {
+            toast.error(msg || "Failed to browse for a data directory");
+        }
+        console.error(error);
+    } finally {
+        setIsBrowsingDataDir(false);
     }
   };
 
@@ -124,14 +275,14 @@ export default function Index() {
       } catch(e) { console.error("Failed to list files", e); }
 
       // Log: Try to find prefix-output.log, fallback to any .log
-      let logName = files.find(f => f === `${prefix}-output.log`) || files.find(f => f.endsWith('.log')) || `${prefix}-output.log`;
+      const logName = files.find(f => f === `${prefix}-output.log`) || files.find(f => f.endsWith('.log')) || `${prefix}-output.log`;
       const log = await getRunFile(projectId, env, runId, logName);
       
       // Report: Try to find prefix-report.txt, fallback to ANY report.txt (excluding the other type). Default to expected name if missing.
       const otherPrefix = prefix === 'wet' ? 'dry' : 'wet';
-      let reportName = files.find(f => f === `${prefix}-report.txt`) || 
-                       files.find(f => f.endsWith('report.txt') && !f.startsWith(`${otherPrefix}-`)) || 
-                       `${prefix}-report.txt`;
+      const reportName = files.find(f => f === `${prefix}-report.txt`) || 
+                         files.find(f => f.endsWith('report.txt') && !f.startsWith(`${otherPrefix}-`)) || 
+                         `${prefix}-report.txt`;
       
       let reportContent = "";
       if (files.includes(reportName)) {
@@ -203,9 +354,51 @@ export default function Index() {
     return 'unknown';
   })();
   const passwordKey = `${environment}:${currentUserName}`;
+  const activePasswordEntry = (() => {
+    const entry = passwordCache[passwordKey];
+    if (!entry || entry.expiresAt <= Date.now()) return undefined;
+    return entry;
+  })();
+
+  const storePasswordFor24Hours = (key: string, password: string) => {
+    const expiresAt = Date.now() + PASSWORD_CACHE_TTL_MS;
+    setPasswordCache((prev) => ({
+      ...normalizePasswordCache(prev),
+      [key]: { password, expiresAt },
+    }));
+  };
+
+  const getStoredPassword = (key: string, refreshWindow = false) => {
+    const entry = passwordCache[key];
+    if (!entry) return undefined;
+
+    if (entry.expiresAt <= Date.now()) {
+      setPasswordCache((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      return undefined;
+    }
+
+    if (refreshWindow) {
+      storePasswordFor24Hours(key, entry.password);
+    }
+
+    return entry.password;
+  };
+
+  const clearStoredPassword = (key: string) => {
+    setPasswordCache((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   // If server says it has password, we consider it "authorized" for prompt skipping purposes
-  // OR if we have it in session memory
-  const hasPassword = !!sessionPasswords[passwordKey] || envFiles[environment]?.hasPassword === true;
+  // OR if we have it in the local 24-hour cache
+  const hasPassword = !!activePasswordEntry || envFiles[environment]?.hasPassword === true;
 
   const isCurrentJobEnabled = useMemo(() => {
       if (!selectedProjectId || !selection || selection.kind !== 'source' || selection.type !== 'job') return false;
@@ -254,6 +447,27 @@ export default function Index() {
     setIsNameDialogOpen(true);
   };
 
+  const handleCreateProject = async (projectName: string) => {
+    const trimmedName = projectName.trim();
+    if (!trimmedName) {
+        toast.error("Enter a project name.");
+        throw new Error("Project name is required");
+    }
+
+    try {
+        const project = await createProject(trimmedName);
+        await loadData();
+        setSelectedProjectId(project.id);
+        setSelection(null);
+        setRunMode('idle');
+        toast.success("Project created");
+    } catch (error) {
+        toast.error(getErrorMessage(error) || "Failed to create project");
+        console.error(error);
+        throw error;
+    }
+  };
+
   const handleCopyFile = (projectId: string, fileName: string, type: 'job'|'script') => {
     setFileOpContext({ projectId, fileName, type });
     setNameDialogMode('copy');
@@ -291,7 +505,7 @@ export default function Index() {
       const project = projects.find(p => p.id === projectId);
       if (!project) return;
       const getFiles = () => type === 'job' ? project.jobs : project.scripts;
-      let files = getFiles();
+      const files = getFiles();
       let sorted = [...files].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       const needsNormalization = sorted.some(f => !/^\d+-/.test(f.name));
       if (needsNormalization) {
@@ -315,9 +529,9 @@ export default function Index() {
                   if (found) fileName = found.name;
               }
               toast.dismiss(tId);
-          } catch (e: any) {
+          } catch (e) {
               toast.dismiss(tId);
-              toast.error("Failed to normalize file names: " + e.message);
+              toast.error("Failed to normalize file names: " + getErrorMessage(e));
               return;
           }
       }
@@ -340,7 +554,7 @@ export default function Index() {
           await renameFile(projectId, tempName, newNameA, type);
           await loadData();
           if (selection?.kind === 'source' && selection.name === fileA.name) setSelection({ ...selection, name: newNameA });
-      } catch (e: any) { toast.error("Failed to move file: " + e.message); }
+      } catch (e) { toast.error("Failed to move file: " + getErrorMessage(e)); }
   };
 
   const handleMoveEnv = async (envName: string, direction: 'left' | 'right') => {
@@ -362,8 +576,8 @@ export default function Index() {
       // Save
       try {
           await saveEnvOrder(currentOrder);
-      } catch (e: any) {
-          toast.error("Failed to save order: " + e.message);
+      } catch (e) {
+          toast.error("Failed to save order: " + getErrorMessage(e));
           // Revert on failure
           setEnvOrder(envOrder); 
       }
@@ -388,7 +602,7 @@ export default function Index() {
         }
         await loadData();
         setIsNameDialogOpen(false);
-    } catch (err: any) { toast.error(err.message || "Operation failed"); }
+    } catch (err) { toast.error(getErrorMessage(err) || "Operation failed"); }
   };
 
   const submitDelete = async () => {
@@ -600,7 +814,7 @@ export default function Index() {
         setPendingRunAction(action);
         setIsPasswordDialogOpen(true);
     } else {
-        const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+        const finalOptions = { ...options, password: getStoredPassword(passwordKey, true) };
         finalOptions.dryRun = action !== 'wet';
         if (action === 'wet') finalOptions.limit = null;
         await executeRunSequence(selectedProjectId, jobName, action, finalOptions);
@@ -608,11 +822,20 @@ export default function Index() {
   };
 
   const handlePasswordConfirm = (password: string, remember: boolean) => {
-    if (remember) setSessionPasswords(prev => ({ ...prev, [passwordKey]: password }));
+    if (remember) storePasswordFor24Hours(passwordKey, password);
     if (pendingRunOptions && pendingRunJobName && pendingRunAction && selectedProjectId) {
         const finalOptions = { ...pendingRunOptions, password };
         executeRunSequence(selectedProjectId, pendingRunJobName, pendingRunAction, finalOptions);
-    } else { toast.success("Password updated in memory"); }
+    } else { toast.success(remember ? "Password stored for 24 hours" : "Password updated"); }
+  };
+
+  const handleReauthenticate = () => {
+      clearStoredPassword(passwordKey);
+      setPendingRunOptions(null);
+      setPendingRunJobName(null);
+      setPendingRunAction(null);
+      setIsPasswordDialogOpen(true);
+      toast.info(`Enter a new password for ${environment}.`);
   };
 
   const handleReviewComplete = () => {
@@ -687,7 +910,7 @@ export default function Index() {
           return;
       }
       
-      const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+      const finalOptions = { ...options, password: getStoredPassword(passwordKey, true) };
       finalOptions.dryRun = true;
       await executeRunSequence(selectedProjectId, jobName, 'retry-dry', finalOptions);
   };
@@ -706,7 +929,7 @@ export default function Index() {
           return;
       }
 
-      const finalOptions = { ...options, password: sessionPasswords[passwordKey] };
+      const finalOptions = { ...options, password: getStoredPassword(passwordKey, true) };
       finalOptions.dryRun = false;
       finalOptions.limit = null;
       await executeRunSequence(selectedProjectId, jobName, 'wet', finalOptions);
@@ -733,6 +956,11 @@ export default function Index() {
         environments={envOrder}
         onEnvChange={setEnvironment} 
         onMoveEnv={handleMoveEnv}
+        dataDir={dataDir}
+        onOpenDataDir={() => {
+          setDataDirDraft(dataDir);
+          setIsDataDirDialogOpen(true);
+        }}
         jobPermissions={currentJobPermissions}
       />
       
@@ -745,6 +973,7 @@ export default function Index() {
             onSelectProject={handleSelectProject}
             selection={selection}
             onSelectFile={setSelection}
+            onCreateProject={handleCreateProject}
             onDeleteRun={handleDeleteRun}
             onCreateJob={handleCreateJob}
             onRunJob={handleRunJobFromSidebar}
@@ -774,6 +1003,7 @@ export default function Index() {
                         onDiscard={handleDiscardRun}
                         onRunAgain={handleRunAgain}
                         onExecuteWet={handleExecuteWet}
+                        onReauthenticate={handleReauthenticate}
                         onRefreshReport={handleRefreshLiveArtifacts}
                     />
                 ) : (
@@ -929,7 +1159,11 @@ export default function Index() {
                         <div className="text-xs text-muted-foreground mb-3">
                             User: <span className="font-mono font-semibold text-foreground">{currentUserName}</span>
                             <br/>
-                            {hasPassword ? "Password stored in session memory." : "No password currently stored for this session."}
+                            {activePasswordEntry
+                              ? "Password cached locally for 24 hours since last use."
+                              : envFiles[environment]?.hasPassword === true
+                                ? "Password available from the environment configuration."
+                                : "No cached password is currently available."}
                         </div>
                         <Button 
                             variant={hasPassword ? "outline" : "secondary"} 
@@ -951,6 +1185,21 @@ export default function Index() {
         envName={environment}
         userName={currentUserName}
         onConfirm={handlePasswordConfirm}
+      />
+      <DataDirectoryDialog
+        open={isDataDirDialogOpen}
+        value={dataDirDraft}
+        currentValue={dataDir}
+        isSaving={isSavingDataDir}
+        isBrowsing={isBrowsingDataDir}
+        required={!dataDirConfigured}
+        onOpenChange={(open) => {
+          setIsDataDirDialogOpen(open);
+          if (open) setDataDirDraft(dataDir);
+        }}
+        onValueChange={setDataDirDraft}
+        onBrowse={handleBrowseDataDirectory}
+        onConfirm={handleSaveDataDirectory}
       />
       <AlertDialog open={isEnvSaveDialogOpen} onOpenChange={setIsEnvSaveDialogOpen}>
         <AlertDialogContent>
@@ -998,5 +1247,3 @@ export default function Index() {
     </div>
   );
 }
-
-

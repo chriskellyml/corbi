@@ -16,6 +16,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+const DEFAULT_MAX_REPORT_ROWS = 500;
+
 interface ReportViewerProps {
     content: string;
     fileName: string;
@@ -32,6 +34,10 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
         return text.split('\n').filter(l => l.trim()).map(line => line.split(delim));
     };
 
+    const reportLines = useMemo(() => {
+        return (content || "").split('\n').filter((line) => line.trim().length > 0);
+    }, [content]);
+
     const parsedData = useMemo(() => {
         if (viewMode !== 'csv') return [];
         return parseCSV(content || "", delimiter);
@@ -39,6 +45,12 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
 
     const headers = parsedData.length > 0 ? parsedData[0] : [];
     const rows = parsedData.length > 1 ? parsedData.slice(1) : [];
+    const limitedRows = rows.slice(0, DEFAULT_MAX_REPORT_ROWS);
+    const limitedLines = reportLines.slice(0, DEFAULT_MAX_REPORT_ROWS);
+    const truncatedTextContent = limitedLines.join('\n');
+    const totalResultCount = headers.length > 0 ? rows.length : reportLines.length;
+    const shownResultCount = viewMode === 'csv' ? limitedRows.length : limitedLines.length;
+    const isTruncated = totalResultCount > DEFAULT_MAX_REPORT_ROWS;
 
     const toggleColumn = (index: number) => {
         const newHidden = new Set(hiddenColumns);
@@ -64,6 +76,11 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
                     <div className="flex flex-col">
                         <span className="font-semibold text-sm">
                             {fileName || "Report Viewer"}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                            {isTruncated
+                                ? `Showing ${shownResultCount} of ${totalResultCount} results`
+                                : `${totalResultCount} results`}
                         </span>
                         {fullPath && (
                             <span className="text-[10px] text-muted-foreground font-mono select-text">
@@ -142,11 +159,18 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
                     </div>
                 ) : (
                     viewMode === 'text' ? (
-                        <Textarea 
-                            readOnly 
-                            className="w-full h-full resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed bg-transparent whitespace-pre overflow-auto" 
-                            value={content} 
-                        />
+                        <div className="flex h-full flex-col">
+                            {isTruncated && (
+                                <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+                                    Report preview limited to the first {DEFAULT_MAX_REPORT_ROWS} rows. Switch to CSV view for column filtering on the same preview.
+                                </div>
+                            )}
+                            <Textarea 
+                                readOnly 
+                                className="w-full h-full resize-none border-0 font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed bg-transparent whitespace-pre overflow-auto" 
+                                value={truncatedTextContent} 
+                            />
+                        </div>
                     ) : (
                         <div className="h-full overflow-auto">
                             {parsedData.length === 0 ? (
@@ -154,31 +178,38 @@ export function ReportViewer({ content, fileName, fullPath, extraActions }: Repo
                                     Empty file or invalid content.
                                 </div>
                             ) : (
-                                <Table className="min-w-max w-full border-collapse">
-                                    <TableHeader>
-                                        <TableRow className="bg-muted/50 hover:bg-muted/50 sticky top-0 z-10 shadow-sm">
-                                            {headers.map((h, i) => {
-                                                if (hiddenColumns.has(i)) return null;
-                                                return <TableHead key={i} className="font-bold text-xs whitespace-nowrap px-4 py-2 h-9 border-b border-r last:border-r-0 bg-muted/50">{h}</TableHead>;
-                                            })}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {rows.map((row, idx) => (
-                                            <TableRow key={idx} className="hover:bg-muted/10">
-                                                {row.map((cell, cIdx) => {
-                                                    if (hiddenColumns.has(cIdx)) return null;
-                                                    return <TableCell key={cIdx} className="text-xs whitespace-nowrap px-4 py-2 border-r last:border-r-0 border-b">{cell}</TableCell>;
+                                <div>
+                                    {isTruncated && (
+                                        <div className="sticky top-0 z-20 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+                                            CSV preview limited to the first {DEFAULT_MAX_REPORT_ROWS} rows.
+                                        </div>
+                                    )}
+                                    <Table className="min-w-max w-full border-collapse">
+                                        <TableHeader>
+                                            <TableRow className="bg-muted/50 hover:bg-muted/50 sticky top-0 z-10 shadow-sm">
+                                                {headers.map((h, i) => {
+                                                    if (hiddenColumns.has(i)) return null;
+                                                    return <TableHead key={i} className="font-bold text-xs whitespace-nowrap px-4 py-2 h-9 border-b border-r last:border-r-0 bg-muted/50">{h}</TableHead>;
                                                 })}
                                             </TableRow>
-                                        ))}
-                                        {rows.length === 0 && headers.length > 0 && (
-                                            <TableRow>
-                                                <TableCell colSpan={headers.length - hiddenColumns.size} className="text-center py-8 text-muted-foreground">No data rows found.</TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {limitedRows.map((row, idx) => (
+                                                <TableRow key={idx} className="hover:bg-muted/10">
+                                                    {row.map((cell, cIdx) => {
+                                                        if (hiddenColumns.has(cIdx)) return null;
+                                                        return <TableCell key={cIdx} className="text-xs whitespace-nowrap px-4 py-2 border-r last:border-r-0 border-b">{cell}</TableCell>;
+                                                    })}
+                                                </TableRow>
+                                            ))}
+                                            {rows.length === 0 && headers.length > 0 && (
+                                                <TableRow>
+                                                    <TableCell colSpan={headers.length - hiddenColumns.size} className="text-center py-8 text-muted-foreground">No data rows found.</TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
                             )}
                         </div>
                     )

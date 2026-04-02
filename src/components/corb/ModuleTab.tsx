@@ -17,10 +17,23 @@ interface ModuleTabProps {
     currentValue: string;
     onChange: (value: string) => void;
     project: Project;
-    onRefreshData?: () => void;
+    onRefreshData?: () => void | Promise<void>;
 }
 
 type SourceType = 'project' | 'support' | 'txt' | 'server';
+
+function isProjectBackedSource(sourceType: SourceType) {
+    return sourceType === 'project' || sourceType === 'txt';
+}
+
+function getCleanSelectionValue(currentValue: string, sourceType: SourceType, type: 'uris' | 'process') {
+    if (!currentValue) return "";
+
+    const value = currentValue.replace('|ADHOC', '');
+    if (sourceType === 'server') return value;
+    if (value.startsWith('scripts/')) return value.replace(/^scripts\//, '');
+    return value.replace(`support/${type}/`, '');
+}
 
 export function ModuleTab({ type, currentValue, onChange, project, onRefreshData }: ModuleTabProps) {
     const [sourceType, setSourceType] = useState<SourceType>('project');
@@ -34,6 +47,13 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     // Create File State
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [newFileName, setNewFileName] = useState("");
+    const contentRef = useRef(content);
+    const originalContentRef = useRef(originalContent);
+    const sourceTypeRef = useRef(sourceType);
+    const currentValueRef = useRef(currentValue);
+    const onRefreshDataRef = useRef(onRefreshData);
+    const projectIdRef = useRef(project.id);
+    const isMountedRef = useRef(true);
 
     // Filter project scripts based on convention
     const projectScripts = project.scripts.filter(s => {
@@ -45,6 +65,111 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     const txtFiles = type === 'uris' 
         ? project.scripts.filter(s => s.name.startsWith('uris/') && s.name.endsWith('.txt')) 
         : [];
+
+    useEffect(() => {
+        contentRef.current = content;
+    }, [content]);
+
+    useEffect(() => {
+        originalContentRef.current = originalContent;
+    }, [originalContent]);
+
+    useEffect(() => {
+        sourceTypeRef.current = sourceType;
+    }, [sourceType]);
+
+    useEffect(() => {
+        currentValueRef.current = currentValue;
+    }, [currentValue]);
+
+    useEffect(() => {
+        onRefreshDataRef.current = onRefreshData;
+    }, [onRefreshData]);
+
+    useEffect(() => {
+        projectIdRef.current = project.id;
+    }, [project.id]);
+
+    const loadSupportFiles = async () => {
+        const files = type === 'uris'
+            ? await fetchSupportUris()
+            : await fetchSupportProcess();
+        setSupportFiles(files);
+        return files;
+    };
+
+    const persistScriptContent = async (
+        nextContent = contentRef.current,
+        nextSourceType = sourceTypeRef.current,
+        nextValue = currentValueRef.current,
+        syncState = true,
+    ) => {
+        if (!isProjectBackedSource(nextSourceType)) return;
+
+        const fileName = getCleanSelectionValue(nextValue, nextSourceType, type);
+        if (!fileName) return;
+
+        if (syncState && isMountedRef.current) {
+            setIsSaving(true);
+        }
+
+        try {
+            await saveFile(projectIdRef.current, fileName, nextContent, 'script');
+            if (syncState && isMountedRef.current) {
+                setOriginalContent(nextContent);
+            }
+            onRefreshDataRef.current?.();
+        } catch (e) {
+            console.error("Auto-save failed", e);
+            toast.error("Auto-save failed");
+        } finally {
+            if (syncState && isMountedRef.current) {
+                setIsSaving(false);
+            }
+        }
+    };
+
+    const loadContent = async () => {
+        if (sourceType === 'server') {
+            setContent("");
+            setOriginalContent("");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const cleanVal = currentValue?.replace('|ADHOC', '') || '';
+
+            if (sourceType === 'project' || sourceType === 'txt') {
+                 const nameToFind = cleanVal.replace(/^scripts\//, '');
+                 const script = project.scripts.find(s => s.name === nameToFind);
+                 if (script) {
+                     setContent(script.content);
+                     setOriginalContent(script.content);
+                 } else {
+                     setContent("");
+                     setOriginalContent("");
+                 }
+            } else {
+                 // Support
+                 if (cleanVal && !cleanVal.startsWith('scripts/')) {
+                     const filename = cleanVal.split('/').pop() || cleanVal;
+                     const text = await fetchSupportContent(type, filename);
+                     setContent(text);
+                     setOriginalContent(text);
+                 } else {
+                     setContent("");
+                     setOriginalContent("");
+                 }
+            }
+        } catch (e) {
+            console.error(e);
+            setContent("// Error loading content");
+            setOriginalContent("// Error loading content");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     useEffect(() => {
         // Determine initial source type from currentValue
@@ -61,8 +186,8 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
              setSourceType('server');
         }
 
-        loadSupportFiles();
-    }, [type]); // Re-run when type changes
+        void loadSupportFiles();
+    }, [type, currentValue]);
 
     // Watch currentValue to update source type if changed externally (e.g. initial load)
     useEffect(() => {
@@ -79,102 +204,48 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
         }
     }, [currentValue]);
 
-    const loadSupportFiles = () => {
-        if (type === 'uris') fetchSupportUris().then(setSupportFiles);
-        else fetchSupportProcess().then(setSupportFiles);
-    };
-
     // Fetch content when currentValue or sourceType changes
-    // Removed 'project' dependency to prevent overwriting local changes during auto-save cycle
     useEffect(() => {
         loadContent();
     }, [currentValue, sourceType]); 
 
-    const loadContent = async () => {
-        if (sourceType === 'server') {
-            setContent("");
-            return;
+    useEffect(() => {
+        if (!isDirty) {
+            loadContent();
         }
-
-        setIsLoading(true);
-        try {
-            const cleanVal = currentValue?.replace('|ADHOC', '') || '';
-
-            if (sourceType === 'project' || sourceType === 'txt') {
-                 const nameToFind = cleanVal.replace(/^scripts\//, '');
-                 const script = project.scripts.find(s => s.name === nameToFind);
-                 if (script) {
-                     setContent(script.content);
-                     setOriginalContent(script.content);
-                 } else {
-                     setContent(""); 
-                 }
-            } else {
-                 // Support
-                 if (cleanVal && !cleanVal.startsWith('scripts/')) {
-                     const filename = cleanVal.split('/').pop() || cleanVal;
-                     const text = await fetchSupportContent(type, filename);
-                     setContent(text);
-                     setOriginalContent(text);
-                 } else {
-                     setContent("");
-                 }
-            }
-        } catch (e) {
-            console.error(e);
-            setContent("// Error loading content");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    }, [project]);
 
     const getCleanSelection = () => {
-        if (!currentValue) return "";
-        let val = currentValue.replace('|ADHOC', '');
-        
-        if (sourceType === 'server') return val;
-
-        if (val.startsWith('scripts/')) {
-            return val.replace(/^scripts\//, '');
-        }
-        return val.replace(`support/${type}/`, '');
+        return getCleanSelectionValue(currentValue, sourceType, type);
     };
 
     const isDirty = content !== originalContent;
 
     // Auto-save Effect for Project Files
     useEffect(() => {
-        if (sourceType === 'support' || sourceType === 'server') return;
+        if (!isProjectBackedSource(sourceType)) return;
         if (!isDirty) return;
 
         const timer = setTimeout(async () => {
-            await performAutoSave();
+            await persistScriptContent();
         }, 1000);
 
         return () => clearTimeout(timer);
     }, [content, isDirty, sourceType, currentValue]);
 
-    const performAutoSave = async () => {
-        const fileName = getCleanSelection();
-        if (!fileName) return;
-
-        setIsSaving(true);
-        try {
-            await saveFile(project.id, fileName, content, 'script');
-            setOriginalContent(content);
-            onRefreshData?.();
-        } catch (e) {
-            console.error("Auto-save failed", e);
-            toast.error("Auto-save failed");
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    useEffect(() => {
+        return () => {
+            isMountedRef.current = false;
+            if (isProjectBackedSource(sourceTypeRef.current) && contentRef.current !== originalContentRef.current) {
+                void persistScriptContent(contentRef.current, sourceTypeRef.current, currentValueRef.current, false);
+            }
+        };
+    }, []);
 
     const handleSourceTypeChange = async (val: SourceType) => {
         // Force save if leaving a dirty project file
-        if (isDirty && (sourceType === 'project' || sourceType === 'txt')) {
-             await performAutoSave();
+        if (isDirty && isProjectBackedSource(sourceType)) {
+             await persistScriptContent();
         }
 
         setSourceType(val);
@@ -199,8 +270,8 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
 
     const handleFileSelect = async (val: string) => {
         // Force save if leaving a dirty project file
-        if (isDirty && (sourceType === 'project' || sourceType === 'txt')) {
-             await performAutoSave();
+        if (isDirty && isProjectBackedSource(sourceType)) {
+             await persistScriptContent();
         }
 
         // val is the name relative to category
@@ -265,17 +336,17 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
             if (sourceType === 'project' || sourceType === 'txt') {
                  relativePath = `${type}/${newFileName}`;
                  await saveFile(project.id, relativePath, "", 'script');
-                 if (onRefreshData) onRefreshData(); // Refresh project data
-                 
-                 // Select it
+                 setContent("");
+                 setOriginalContent("");
+                 await onRefreshData?.();
                  onChange(`scripts/${relativePath}|ADHOC`);
             } else {
                  // Support
                  const supportType = type === 'uris' ? 'support-uris' : 'support-process';
                  await saveFile(null, newFileName, "", supportType);
-                 loadSupportFiles(); // Refresh support list
-                 
-                 // Select it
+                 setContent("");
+                 setOriginalContent("");
+                 await loadSupportFiles();
                  onChange(`support/${type}/${newFileName}|ADHOC`);
             }
             
@@ -290,7 +361,7 @@ export function ModuleTab({ type, currentValue, onChange, project, onRefreshData
     return (
         <div className="flex flex-col h-full">
             <div className="bg-muted/10 border-b p-4 space-y-4">
-                <RadioGroup value={sourceType} onValueChange={(v: any) => handleSourceTypeChange(v)} className="flex gap-6">
+                <RadioGroup value={sourceType} onValueChange={(value) => void handleSourceTypeChange(value as SourceType)} className="flex gap-6">
                     <div className="flex items-center space-x-2">
                         <RadioGroupItem value="project" id="r-project" />
                         <Label htmlFor="r-project">Project Script</Label>

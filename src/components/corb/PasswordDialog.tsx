@@ -58,7 +58,7 @@ export function PasswordDialog({ open, onOpenChange, envName, userName, onConfir
                 onCheckedChange={(c) => setRemember(!!c)} 
             />
             <Label htmlFor="remember" className="text-sm font-normal text-muted-foreground">
-                Store in memory for this session
+                Cache locally for 24 hours since last use
             </Label>
           </div>
           <DialogFooter>

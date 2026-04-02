@@ -127,7 +127,7 @@ export function JobEditor({ jobName, content, onChange, project, onRefreshData, 
                     </TabsList>
                 </div>
 
-                <TabsContent value="URIS" className="flex-1 flex flex-col min-h-0 mt-0 border-t border-border/50 data-[state=inactive]:hidden">
+                <TabsContent forceMount value="URIS" className="flex-1 flex flex-col min-h-0 mt-0 border-t border-border/50 data-[state=inactive]:hidden">
                     <ModuleTab 
                         type="uris"
                         currentValue={getProperty('URIS-MODULE') || getProperty('URIS_MODULE')}
@@ -137,7 +137,7 @@ export function JobEditor({ jobName, content, onChange, project, onRefreshData, 
                     />
                 </TabsContent>
 
-                <TabsContent value="PROCESS" className="flex-1 flex flex-col min-h-0 mt-0 border-t border-border/50 data-[state=inactive]:hidden">
+                <TabsContent forceMount value="PROCESS" className="flex-1 flex flex-col min-h-0 mt-0 border-t border-border/50 data-[state=inactive]:hidden">
                      <ModuleTab 
                         type="process"
                         currentValue={getProperty('PROCESS-MODULE') || getProperty('PROCESS_MODULE')}
