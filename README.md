@@ -34,13 +34,15 @@ cp env/LOCAL.props.template env/LOCAL.props
 
 ### 3. Start CoRBi
 
+CoRBi can now switch data directories from the UI. The selected path is remembered in browser local storage, so `CORBI_DATA_DIR` is optional unless you want to force a startup default.
+
 **Option A: Using Make (Recommended)**
 
 Copy the environment template:
 
 ```bash
 cp dot.env.template .env
-# Edit .env and set CORBI_DATA_DIR to your corbi-data-template path
+# Optional: edit .env and set CORBI_DATA_DIR to your preferred startup path
 ```
 
 Then run with the data directory:
@@ -61,7 +63,7 @@ make start
 
 ```bash
 cp dot.env.template .env
-# Edit .env and set CORBI_DATA_DIR to your corbi-data-template path
+# Optional: edit .env and set CORBI_DATA_DIR to your preferred startup path
 
 pnpm install
 pnpm dev
@@ -89,6 +91,8 @@ CoRBi resolves `CORBI_DATA_DIR` in this order (highest to lowest priority):
 1. **Command-line override:** `make start CORBI_DATA_DIR=/path` or `CORBI_DATA_DIR=/path pnpm dev`
 2. **Repository `.env` file:** Set `CORBI_DATA_DIR=...` in the repo root's `.env`
 3. **Default:** Repository root (looks for `src/projects/`, `env/`, etc. in the current directory)
+
+Once the app is open, you can switch to a different data directory from the folder button in the top bar. The last successful selection is restored from local storage on the next visit.
 
 ## Running a Sample Job
 
