@@ -1,0 +1,224 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create a GitHub Release"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.22"
+  NODE_VERSION: "20"
+  WAILS_VERSION: "v2.12.0"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        platform:
+          - { target: darwin/arm64, suffix: mac-arm64 }
+          - { target: darwin/universal, suffix: mac-universal }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: ~/go/bin/wails build -platform ${{ matrix.platform.target }}
+
+      - name: Package .app as zip
+        run: |
+          mkdir -p build/dist
+          cd build/bin && zip -r ../../build/dist/CoRBi-${{ matrix.platform.suffix }}.zip corbi.app
+
+      - name: Create DMG (arm64 only)
+        if: matrix.platform.suffix == 'mac-arm64'
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "CoRBi" \
+            --volicon build/appicon.png \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "corbi.app" 175 190 \
+            --app-drop-link 425 190 \
+            build/dist/CoRBi-${{ matrix.platform.suffix }}.dmg \
+            build/bin/corbi.app || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: corbi-${{ matrix.platform.suffix }}
+          path: build/dist/*
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: |
+          $env:PATH = "$env:USERPROFILE\go\bin;$env:PATH"
+          wails build -platform windows/amd64
+
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force -Path build\dist
+          Copy-Item build\bin\corbi.exe build\dist\CoRBi-windows-amd64.exe
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: corbi-windows-amd64
+          path: build/dist/*
+          retention-days: 30
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.0-dev \
+            pkg-config
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: ~/go/bin/wails build -platform linux/amd64
+
+      - name: Package binary
+        run: |
+          mkdir -p build/dist
+          cp build/bin/corbi build/dist/CoRBi-linux-amd64
+          chmod +x build/dist/CoRBi-linux-amd64
+          tar czf build/dist/CoRBi-linux-amd64.tar.gz -C build/bin corbi
+
+      - name: Build .deb and .rpm packages
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          GOARCH=amd64 ~/go/bin/nfpm package --packager deb --target build/dist/
+          GOARCH=amd64 ~/go/bin/nfpm package --packager rpm --target build/dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: corbi-linux-amd64
+          path: build/dist/*
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lhR artifacts/
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=v0.0.0-dev.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: CoRBi ${{ steps.version.outputs.version }}
+          draft: true
+          generate_release_notes: true
+          files: artifacts/*
