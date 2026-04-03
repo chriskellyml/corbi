@@ -1,0 +1,36 @@
+# nfpm configuration for building .deb and .rpm packages
+# Usage:
+#   nfpm package --packager deb --target build/dist/
+#   nfpm package --packager rpm --target build/dist/
+
+name: corbi
+arch: ${GOARCH}
+platform: linux
+version: 1.0.0
+maintainer: CoRBi
+description: CoRB Interactive - MarkLogic Batch Processing
+vendor: CoRBi
+homepage: ""
+license: ""
+
+contents:
+  - src: build/bin/corbi
+    dst: /usr/local/bin/corbi
+    file_info:
+      mode: 0755
+
+  - src: build/linux/corbi.desktop
+    dst: /usr/share/applications/corbi.desktop
+
+  - src: build/appicon.png
+    dst: /usr/share/icons/hicolor/1024x1024/apps/corbi.png
+
+  # Scaled icons
+  - src: build/linux/icons/256x256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/corbi.png
+
+  - src: build/linux/icons/128x128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/corbi.png
+
+  - src: build/linux/icons/64x64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/corbi.png
