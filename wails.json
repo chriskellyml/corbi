@@ -1,0 +1,23 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "corbi",
+  "outputfilename": "corbi",
+  "frontend:dir": ".",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm build",
+  "frontend:dev:watcher": "pnpm dev:frontend",
+  "frontend:dev:serverUrl": "auto",
+  "assetdir": "./dist",
+  "wailsjsdir": "./src/wailsjs",
+  "author": {
+    "name": "CoRBi",
+    "email": ""
+  },
+  "info": {
+    "companyName": "CoRBi",
+    "productName": "CoRBi",
+    "productVersion": "1.0.0",
+    "copyright": "",
+    "comments": "CoRB Interactive - MarkLogic Batch Processing"
+  }
+}
